@@ -12,7 +12,7 @@ function App() {
   return (
     <SafeAreaProvider>
       <StatusBar barStyle={isDarkMode ? "light-content" : "dark-content"} />
-      <CopilotKitProvider runtimeUrl={RUNTIME_URL}>
+      <CopilotKitProvider runtimeUrl={RUNTIME_URL} useSingleEndpoint={true}>
         <ChatScreen />
       </CopilotKitProvider>
     </SafeAreaProvider>

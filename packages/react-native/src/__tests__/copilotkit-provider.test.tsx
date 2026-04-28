@@ -112,7 +112,7 @@ describe("CopilotKitProvider (React Native)", () => {
       expect(hoisted.MockCoreConstructor).toHaveBeenCalledWith(
         expect.objectContaining({
           runtimeUrl: "https://api.test",
-          runtimeTransport: "single",
+          runtimeTransport: "auto",
           headers: { auth: "token" },
           properties: { key: "val" },
         }),
@@ -160,14 +160,14 @@ describe("CopilotKitProvider (React Native)", () => {
       );
     });
 
-    it("defaults useSingleEndpoint to true", () => {
+    it("defaults useSingleEndpoint to auto-detect", () => {
       render(
         <CopilotKitProvider runtimeUrl="https://api.test">
           <div />
         </CopilotKitProvider>,
       );
       expect(hoisted.MockCoreConstructor).toHaveBeenCalledWith(
-        expect.objectContaining({ runtimeTransport: "single" }),
+        expect.objectContaining({ runtimeTransport: "auto" }),
       );
     });
   });

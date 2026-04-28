@@ -59,7 +59,7 @@ export const CopilotKitProvider: React.FC<CopilotKitNativeProviderProps> = ({
   children,
   runtimeUrl,
   headers,
-  useSingleEndpoint = true,
+  useSingleEndpoint,
   properties,
   onError,
 }) => {
@@ -78,7 +78,12 @@ export const CopilotKitProvider: React.FC<CopilotKitNativeProviderProps> = ({
   if (copilotkitRef.current === null) {
     copilotkitRef.current = new CopilotKitCoreReact({
       runtimeUrl,
-      runtimeTransport: useSingleEndpoint ? "single" : "rest",
+      runtimeTransport:
+        useSingleEndpoint === true
+          ? "single"
+          : useSingleEndpoint === false
+            ? "rest"
+            : "auto",
       headers: stableHeaders,
       properties: stableProperties,
     });
@@ -89,7 +94,13 @@ export const CopilotKitProvider: React.FC<CopilotKitNativeProviderProps> = ({
   // Sync props to core instance
   useEffect(() => {
     copilotkit.setRuntimeUrl(runtimeUrl);
-    copilotkit.setRuntimeTransport(useSingleEndpoint ? "single" : "rest");
+    copilotkit.setRuntimeTransport(
+      useSingleEndpoint === true
+        ? "single"
+        : useSingleEndpoint === false
+          ? "rest"
+          : "auto",
+    );
     copilotkit.setHeaders(stableHeaders);
     copilotkit.setProperties(stableProperties);
   }, [
