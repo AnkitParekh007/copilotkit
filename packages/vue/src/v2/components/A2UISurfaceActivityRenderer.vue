@@ -1,10 +1,18 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, h, onBeforeUnmount, ref, watch, type VNode } from "vue";
 import type { ActivityMessage } from "@ag-ui/core";
 import type { A2UITheme } from "../types";
 import type { A2UIOperation } from "./a2ui";
 import { getOperationSurfaceId } from "./a2ui";
 import { useCopilotKit } from "../providers";
+import { MessageProcessor } from "@a2ui/web_core/v0_9";
+import {
+  vueBasicCatalog,
+  A2uiSurface,
+  type VueComponentImplementation,
+} from "./a2ui/index";
+
+const DEFAULT_SURFACE_ID = "default";
 
 const props = defineProps<{
   activityType: string;
@@ -15,192 +23,158 @@ const props = defineProps<{
   catalog?: any;
 }>();
 
-type ReactModule = any;
-type A2UIModule = any;
-
-let a2uiInitialized = false;
-
-const hostRef = ref<HTMLElement | null>(null);
-const reactRootRef = ref<any>(null);
-const reactRuntimeRef = ref<{
-  React: ReactModule;
-  A2UI: A2UIModule;
-} | null>(null);
-
 const { copilotkit } = useCopilotKit();
 
-async function ensureReactRuntime() {
-  if (reactRuntimeRef.value) return reactRuntimeRef.value;
-  const [React, ReactDOMClient, A2UI] = await Promise.all([
-    import("react"),
-    import("react-dom/client"),
-    import("@copilotkit/a2ui-renderer"),
-  ]);
-  if (!a2uiInitialized) {
-    A2UI.initializeDefaultCatalog();
-    A2UI.injectStyles();
-    a2uiInitialized = true;
+// MessageProcessor from @a2ui/web_core — framework-agnostic
+const processorRef = ref<MessageProcessor<VueComponentImplementation> | null>(
+  null,
+);
+// Version counter to trigger Vue reactivity on processor state changes
+const version = ref(0);
+// Error state
+const error = ref<string | null>(null);
+// Track last processed operations hash to avoid re-processing
+let lastOpsHash = "";
+
+function getOrCreateProcessor(): MessageProcessor<VueComponentImplementation> {
+  if (!processorRef.value) {
+    const catalog = props.catalog ?? vueBasicCatalog;
+    processorRef.value = new MessageProcessor<VueComponentImplementation>(
+      [catalog],
+      (action: unknown) => {
+        handleAction(action);
+      },
+    );
   }
-  if (!reactRootRef.value && hostRef.value) {
-    reactRootRef.value = ReactDOMClient.createRoot(hostRef.value);
-  }
-  reactRuntimeRef.value = { React, A2UI };
-  return reactRuntimeRef.value;
+  return processorRef.value;
 }
 
-function createReactTree(
-  React: ReactModule,
-  A2UI: A2UIModule,
-  operations: A2UIOperation[],
-) {
-  const {
-    A2UIProvider,
-    A2UIRenderer,
-    useA2UIActions,
-    useA2UIError,
-    DEFAULT_SURFACE_ID,
-  } = A2UI;
-
-  const SurfaceOrError = ({ surfaceId }: { surfaceId: string }) => {
-    const error = useA2UIError();
-    if (error) {
-      return React.createElement(
-        "div",
-        {
-          className:
-            "cpk:rounded-lg cpk:border cpk:border-red-200 cpk:bg-red-50 cpk:p-3 cpk:text-sm cpk:text-red-700",
-        },
-        `A2UI render error: ${error}`,
-      );
-    }
-    return React.createElement(A2UIRenderer, {
-      surfaceId,
-      className: "cpk:flex cpk:flex-1",
+async function handleAction(message: unknown) {
+  if (!props.agent) return;
+  try {
+    copilotkit.value.setProperties({
+      ...(copilotkit.value.properties ?? {}),
+      a2uiAction: message,
     });
-  };
+    await copilotkit.value.runAgent({ agent: props.agent as any });
+  } finally {
+    const { a2uiAction, ...rest } = copilotkit.value.properties ?? {};
+    copilotkit.value.setProperties(rest);
+  }
+}
 
-  const SurfaceMessageProcessor = ({
-    surfaceId,
-    ops,
-  }: {
-    surfaceId: string;
-    ops: A2UIOperation[];
-  }) => {
-    const { processMessages, getSurface } = useA2UIActions();
-    const lastHashRef = React.useRef("");
-    React.useEffect(() => {
-      const hash = JSON.stringify(ops);
-      if (hash === lastHashRef.current) return;
-      lastHashRef.current = hash;
+function processOperations(operations: A2UIOperation[]) {
+  if (!operations?.length) return;
 
-      const existing = getSurface(surfaceId);
+  const hash = JSON.stringify(operations);
+  if (hash === lastOpsHash) return;
+  lastOpsHash = hash;
+
+  const processor = getOrCreateProcessor();
+  try {
+    // Group operations by surface ID
+    const grouped = new Map<string, A2UIOperation[]>();
+    for (const op of operations) {
+      const surfaceId = getOperationSurfaceId(op) ?? DEFAULT_SURFACE_ID;
+      if (!grouped.has(surfaceId)) grouped.set(surfaceId, []);
+      grouped.get(surfaceId)!.push(op);
+    }
+
+    // For each surface, skip createSurface if the surface already exists
+    for (const [surfaceId, ops] of grouped) {
+      const existing = processor.model.getSurface(surfaceId);
       const filtered = existing
         ? ops.filter((op) => !(op as any)?.createSurface)
         : ops;
-      processMessages(filtered as any);
-    }, [processMessages, getSurface, surfaceId, ops]);
-    return null;
-  };
-
-  const SurfaceHost = ({
-    surfaceId,
-    ops,
-  }: {
-    surfaceId: string;
-    ops: A2UIOperation[];
-  }) => {
-    const handleAction = async (message: unknown) => {
-      if (!props.agent) return;
-      try {
-        copilotkit.value.setProperties({
-          ...(copilotkit.value.properties ?? {}),
-          a2uiAction: message,
-        });
-        await copilotkit.value.runAgent({ agent: props.agent as any });
-      } finally {
-        const { a2uiAction, ...rest } = copilotkit.value.properties ?? {};
-        copilotkit.value.setProperties(rest);
-      }
-    };
-
-    return React.createElement(
-      "div",
-      {
-        className: "cpk:flex cpk:w-full cpk:flex-none cpk:flex-col cpk:gap-4",
-        "data-surface-id": surfaceId,
-      },
-      React.createElement(
-        A2UIProvider,
-        {
-          onAction: handleAction,
-          theme: (props.theme ?? {}) as any,
-          catalog: props.catalog,
-        },
-        React.createElement(SurfaceMessageProcessor, { surfaceId, ops }),
-        React.createElement(SurfaceOrError, { surfaceId }),
-      ),
-    );
-  };
-
-  const grouped = new Map<string, A2UIOperation[]>();
-  for (const op of operations) {
-    const surfaceId = getOperationSurfaceId(op) ?? DEFAULT_SURFACE_ID;
-    if (!grouped.has(surfaceId)) grouped.set(surfaceId, []);
-    grouped.get(surfaceId)!.push(op);
+      processor.processMessages(filtered as any);
+    }
+    error.value = null;
+  } catch (err) {
+    console.warn("[A2UI Vue] processMessages error:", err);
+    error.value = err instanceof Error ? err.message : String(err);
   }
-
-  return React.createElement(
-    "div",
-    {
-      className:
-        "cpk:flex cpk:min-h-0 cpk:flex-1 cpk:flex-col cpk:gap-6 cpk:overflow-auto cpk:py-6",
-      "data-testid": "a2ui-activity-renderer",
-    },
-    Array.from(grouped.entries()).map(([surfaceId, ops]) =>
-      React.createElement(SurfaceHost, { key: surfaceId, surfaceId, ops }),
-    ),
-  );
+  version.value++;
 }
 
-async function renderReactSurface() {
-  if (!hostRef.value || !props.content.operations?.length) return;
-  const runtime = await ensureReactRuntime();
-  if (!runtime || !reactRootRef.value) return;
-  reactRootRef.value.render(
-    createReactTree(runtime.React, runtime.A2UI, props.content.operations),
-  );
-}
-
+// Process operations on mount and when they change
 watch(
   () => [props.content.operations, props.theme, props.catalog, props.agent],
   () => {
-    void renderReactSurface();
+    processOperations(props.content.operations);
   },
-  { deep: true },
+  { deep: true, immediate: true },
 );
 
-onMounted(() => {
-  void renderReactSurface();
-});
-
 onBeforeUnmount(() => {
-  if (reactRootRef.value) {
-    reactRootRef.value.unmount();
-    reactRootRef.value = null;
-  }
+  processorRef.value = null;
+  lastOpsHash = "";
 });
 
 const hasOperations = computed(
   () => (props.content.operations ?? []).length > 0,
 );
+
+// Compute the list of surfaces to render
+const surfaceEntries = computed(() => {
+  // Touch version to ensure reactivity
+  void version.value;
+
+  if (!processorRef.value) return [];
+
+  const entries: Array<{
+    surfaceId: string;
+    surface: ReturnType<
+      typeof processorRef.value.model.getSurface
+    >;
+  }> = [];
+
+  // Group operations by surface to know which surfaces we expect
+  const grouped = new Map<string, A2UIOperation[]>();
+  for (const op of props.content.operations ?? []) {
+    const surfaceId = getOperationSurfaceId(op) ?? DEFAULT_SURFACE_ID;
+    if (!grouped.has(surfaceId)) grouped.set(surfaceId, []);
+    grouped.get(surfaceId)!.push(op);
+  }
+
+  for (const [surfaceId] of grouped) {
+    const surface = processorRef.value.model.getSurface(surfaceId);
+    if (surface) {
+      entries.push({ surfaceId, surface });
+    }
+  }
+
+  return entries;
+});
 </script>
 
 <template>
   <div
     v-if="hasOperations"
-    ref="hostRef"
     data-copilotkit
     :data-activity-type="activityType"
     :data-message-id="message.id"
-  />
+  >
+    <div
+      v-if="error"
+      class="cpk:rounded-lg cpk:border cpk:border-red-200 cpk:bg-red-50 cpk:p-3 cpk:text-sm cpk:text-red-700"
+    >
+      A2UI render error: {{ error }}
+    </div>
+    <div
+      v-else
+      class="cpk:flex cpk:min-h-0 cpk:flex-1 cpk:flex-col cpk:gap-6 cpk:overflow-auto cpk:py-6"
+      data-testid="a2ui-activity-renderer"
+    >
+      <div
+        v-for="entry in surfaceEntries"
+        :key="entry.surfaceId"
+        class="cpk:flex cpk:w-full cpk:flex-none cpk:flex-col cpk:gap-4"
+        :data-surface-id="entry.surfaceId"
+      >
+        <div class="a2ui-surface cpk:flex cpk:flex-1">
+          <A2uiSurface :surface="entry.surface" />
+        </div>
+      </div>
+    </div>
+  </div>
 </template>
