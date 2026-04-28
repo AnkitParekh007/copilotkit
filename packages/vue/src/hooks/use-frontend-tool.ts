@@ -1,65 +1,44 @@
-import { watch } from "vue";
-import type { WatchSource } from "vue";
-import { useCopilotKit } from "../providers/useCopilotKit";
-import type { VueFrontendTool } from "../types";
-import type { VueToolCallRenderer } from "../types";
-
-const EMPTY_DEPS: WatchSource<unknown>[] = [];
-
 /**
- * Registers a frontend tool and optional renderer with CopilotKit core.
+ * V1 compatibility wrapper for useFrontendTool.
  *
- * The tool registration is reactive to provided dependencies and is cleaned up
- * automatically when the current scope is disposed.
- *
- * @example
- * ```ts
- * useFrontendTool({
- *   name: "sayHello",
- *   parameters: z.object({ name: z.string() }),
- *   handler: async ({ name }) => `Hello ${name}`,
- * });
- * ```
+ * Accepts the legacy Parameter[] format and converts to Zod via getZodParameters,
+ * then delegates to the v2 composable.
  */
-export function useFrontendTool<T extends Record<string, unknown>>(
-  tool: VueFrontendTool<T>,
+import type { WatchSource } from "vue";
+import {
+  type Parameter,
+  type MappedParameterTypes,
+  getZodParameters,
+} from "@copilotkit/shared";
+import { useFrontendTool as useFrontendToolV2 } from "../v2/hooks/use-frontend-tool";
+import type { VueFrontendTool } from "../v2/types";
+
+export interface UseFrontendToolArgs<T extends Parameter[] | [] = []> {
+  name: string;
+  description?: string;
+  parameters?: T;
+  handler?: (args: MappedParameterTypes<T>) => unknown | Promise<unknown>;
+  followUp?: boolean | string;
+  available?: "disabled" | "enabled";
+  render?: VueFrontendTool<MappedParameterTypes<T>>["render"];
+  agentId?: string;
+}
+
+export function useFrontendTool<const T extends Parameter[] = []>(
+  tool: UseFrontendToolArgs<T>,
   deps?: WatchSource<unknown>[],
 ) {
-  const { copilotkit } = useCopilotKit();
-  const extraDeps = deps ?? EMPTY_DEPS;
-  const core = copilotkit.value;
+  const { name, description, parameters, handler, followUp, available, render, agentId } = tool;
+  const zodParameters = getZodParameters(parameters);
 
-  watch(
-    [
-      () => tool.name,
-      () => tool.available,
-      () => extraDeps.length,
-      ...extraDeps,
-    ],
-    (_newValues, _old, onCleanup) => {
-      const name = tool.name;
-
-      if (core.getTool({ toolName: name, agentId: tool.agentId })) {
-        console.warn(
-          `Tool '${name}' already exists for agent '${tool.agentId || "global"}'. Overriding with latest registration.`,
-        );
-        core.removeTool(name, tool.agentId);
-      }
-      core.addTool(tool);
-
-      if (tool.render && tool.parameters) {
-        core.addHookRenderToolCall({
-          name,
-          args: tool.parameters,
-          agentId: tool.agentId,
-          render: tool.render,
-        } as VueToolCallRenderer<unknown>);
-      }
-
-      onCleanup(() => {
-        core.removeTool(name, tool.agentId);
-      });
-    },
-    { immediate: true },
-  );
+  useFrontendToolV2<MappedParameterTypes<T>>({
+    name,
+    description,
+    parameters: zodParameters,
+    handler: handler as ((args: MappedParameterTypes<T>) => unknown | Promise<unknown>) | undefined,
+    followUp,
+    render,
+    available: available === undefined ? undefined : available !== "disabled",
+    agentId,
+  });
 }
