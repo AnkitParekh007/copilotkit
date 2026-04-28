@@ -6,7 +6,7 @@ export default defineConfig({
   plugins: [vue()],
   test: {
     environment: "jsdom",
-    setupFiles: ["./src/__tests__/setup.ts"],
+    setupFiles: ["./src/v2/__tests__/setup.ts"],
     include: ["**/__tests__/**/*.test.ts"],
     globals: true,
     reporters: [["default", { summary: false }]],
@@ -16,7 +16,7 @@ export default defineConfig({
       "@": resolve(__dirname, "./src"),
       "@copilotkit/web-inspector": resolve(
         __dirname,
-        "./src/__tests__/mocks/web-inspector.ts",
+        "./src/v2/__tests__/mocks/web-inspector.ts",
       ),
     },
   },

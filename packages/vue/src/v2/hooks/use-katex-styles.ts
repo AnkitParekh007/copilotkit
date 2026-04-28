@@ -18,7 +18,7 @@ let injected = false;
  * @example
  * ```vue
  * <script setup lang="ts">
- * import { useKatexStyles } from "@copilotkitnext/vue";
+ * import { useKatexStyles } from "@copilotkit/vue";
  *
  * useKatexStyles();
  * </script>

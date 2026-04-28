@@ -25,7 +25,7 @@ export interface KeyboardState {
  * @example
  * ```vue
  * <script setup lang="ts">
- * import { useKeyboardHeight } from "@copilotkitnext/vue";
+ * import { useKeyboardHeight } from "@copilotkit/vue";
  *
  * const { isKeyboardOpen, keyboardHeight } = useKeyboardHeight();
  * </script>
