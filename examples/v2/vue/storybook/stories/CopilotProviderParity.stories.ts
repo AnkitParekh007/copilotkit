@@ -1,4 +1,4 @@
-import type { CopilotKitCoreVue } from "@copilotkitnext/vue";
+import type { CopilotKitCoreVue } from "@copilotkit/vue";
 import type { Meta, StoryObj } from "@storybook/vue3-vite";
 import { defineComponent, h, ref } from "vue";
 import {
@@ -6,12 +6,12 @@ import {
   CopilotChat,
   CopilotKitProvider,
   useCopilotKit,
-} from "@copilotkitnext/vue";
+} from "@copilotkit/vue";
 import type {
   RunAgentInput,
   RunAgentParameters,
   RunAgentResult,
-} from "@copilotkitnext/vue";
+} from "@copilotkit/vue";
 
 class LocalStoryAgent extends AbstractAgent {
   constructor(agentId = "default") {

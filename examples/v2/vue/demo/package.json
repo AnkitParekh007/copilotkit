@@ -1,5 +1,5 @@
 {
-  "name": "@copilotkitnext/vue-demo",
+  "name": "@copilotkit/vue-demo",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -15,7 +15,7 @@
     "@copilotkit/core": "workspace:*",
     "@copilotkit/runtime": "workspace:*",
     "@copilotkit/voice": "workspace:*",
-    "@copilotkitnext/vue": "workspace:*",
+    "@copilotkit/vue": "workspace:*",
     "h3": "^1.15.4",
     "hono": "^4.11.4",
     "nuxt": "3.17.5",

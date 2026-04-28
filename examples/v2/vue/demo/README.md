@@ -1,6 +1,6 @@
 # Vue Demo (Nuxt)
 
-Nuxt SSR demo for `@copilotkitnext/vue` with strict parity intent against the React demo.
+Nuxt SSR demo for `@copilotkit/vue` with strict parity intent against the React demo.
 
 ## Parity policy
 

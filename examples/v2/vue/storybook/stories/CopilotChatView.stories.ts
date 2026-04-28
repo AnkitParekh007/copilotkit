@@ -7,7 +7,7 @@ import {
   CopilotChatMessageView,
   CopilotChatView,
   CopilotKitProvider,
-} from "@copilotkitnext/vue";
+} from "@copilotkit/vue";
 
 const suggestionSamples: Suggestion[] = [
   {

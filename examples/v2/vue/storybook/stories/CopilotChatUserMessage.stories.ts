@@ -3,7 +3,7 @@ import type { Meta, StoryObj } from "@storybook/vue3-vite";
 import {
   CopilotChatConfigurationProvider,
   CopilotChatUserMessage,
-} from "@copilotkitnext/vue";
+} from "@copilotkit/vue";
 
 const handleEditMessage = (message: string) => () => window.alert(message);
 const handleEditMessageLog = (message: string) => () => console.log(message);

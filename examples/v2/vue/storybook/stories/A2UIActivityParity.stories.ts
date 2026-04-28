@@ -8,7 +8,7 @@ import {
   CopilotChatConfigurationProvider,
   CopilotKitProvider,
   useCopilotKit,
-} from "@copilotkitnext/vue";
+} from "@copilotkit/vue";
 
 const sampleContent = {
   operations: [

@@ -6,7 +6,7 @@ import {
   CopilotPopup,
   useConfigureSuggestions,
   useFrontendTool,
-} from "@copilotkitnext/vue";
+} from "@copilotkit/vue";
 
 const popupCards = Array.from({ length: 6 }, (_unused, index) => index + 1);
 

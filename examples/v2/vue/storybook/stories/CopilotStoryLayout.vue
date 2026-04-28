@@ -2,7 +2,7 @@
 import {
   CopilotChatConfigurationProvider,
   CopilotKitProvider,
-} from "@copilotkitnext/vue";
+} from "@copilotkit/vue";
 
 withDefaults(
   defineProps<{

@@ -1,6 +1,6 @@
 # Vue Storybook
 
-Storybook workspace for `@copilotkitnext/vue` with strict parity intent against the React storybook.
+Storybook workspace for `@copilotkit/vue` with strict parity intent against the React storybook.
 
 ## Parity policy
 

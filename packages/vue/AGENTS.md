@@ -1,6 +1,6 @@
-# AGENTS.md - `@copilotkitnext/vue` workflow guide
+# AGENTS.md - `@copilotkit/vue` workflow guide
 
-This file defines contributor workflow for keeping `@copilotkitnext/vue` aligned with upstream `@copilotkitnext/react`.
+This file defines contributor workflow for keeping `@copilotkit/vue` aligned with upstream `@copilotkit/react`.
 
 ## Scope
 
@@ -35,13 +35,13 @@ When porting a React feature:
 
 Run after meaningful changes:
 
-1. `pnpm nx run @copilotkitnext/vue:lint`
-2. `pnpm nx run @copilotkitnext/vue:check-types`
-3. `pnpm nx run @copilotkitnext/vue:test`
+1. `pnpm nx run @copilotkit/vue:lint`
+2. `pnpm nx run @copilotkit/vue:check-types`
+3. `pnpm nx run @copilotkit/vue:test`
 
 When touching integration/build behavior:
 
-1. `pnpm nx run @copilotkitnext/vue:build`
+1. `pnpm nx run @copilotkit/vue:build`
 
 ## Documentation placement
 

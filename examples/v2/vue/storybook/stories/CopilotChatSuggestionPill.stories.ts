@@ -1,7 +1,7 @@
 import type { Component } from "vue";
 import type { Meta, StoryObj } from "@storybook/vue3-vite";
 import { ArrowRight, Sparkles } from "lucide-vue-next";
-import { CopilotChatSuggestionPill } from "@copilotkitnext/vue";
+import { CopilotChatSuggestionPill } from "@copilotkit/vue";
 
 type SuggestionPillStoryArgs = {
   label: string;

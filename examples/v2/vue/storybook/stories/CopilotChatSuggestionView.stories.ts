@@ -5,7 +5,7 @@ import { Sparkles } from "lucide-vue-next";
 import {
   CopilotChatSuggestionPill,
   CopilotChatSuggestionView,
-} from "@copilotkitnext/vue";
+} from "@copilotkit/vue";
 
 const suggestions: Suggestion[] = [
   {
