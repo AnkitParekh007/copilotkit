@@ -62,6 +62,15 @@ pnpm run ios
 
 ### Android
 
+Make sure `ANDROID_HOME` is set. On macOS, add to your `~/.zshrc`:
+
+```sh
+export ANDROID_HOME=$HOME/Library/Android/sdk
+export PATH=$PATH:$ANDROID_HOME/emulator:$ANDROID_HOME/platform-tools
+```
+
+Then launch an emulator from Android Studio (or connect a physical device) and run:
+
 ```sh
 pnpm run android
 ```
@@ -88,5 +97,7 @@ const RUNTIME_URL = "http://localhost:3000/api/copilotkit";
 
 - **Metro can't resolve modules**: Run `pnpm start -- --reset-cache` to clear the Metro cache.
 - **CocoaPods errors**: Re-run `cd ios && bundle exec pod install`.
+- **Android SDK not found**: Make sure `ANDROID_HOME` is set (see Android section above).
+- **No emulators found**: Open Android Studio, go to Device Manager, and create/start an AVD.
 - **Build failures after pulling changes**: Rebuild the CopilotKit packages (step 2 above).
 - See the React Native [Troubleshooting guide](https://reactnative.dev/docs/troubleshooting) for general issues.

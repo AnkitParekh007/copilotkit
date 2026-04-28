@@ -1323,6 +1323,9 @@ importers:
       '@react-native/babel-preset':
         specifier: 0.85.2
         version: 0.85.2(@babel/core@7.28.5)
+      '@react-native/gradle-plugin':
+        specifier: 0.85.2
+        version: 0.85.2
       '@react-native/jest-preset':
         specifier: 0.85.2
         version: 0.85.2(@babel/core@7.28.5)(react@19.2.3)
