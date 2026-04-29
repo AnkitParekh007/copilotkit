@@ -149,7 +149,10 @@ export function createCopilotExpressHandler({
   } else if (normalizedBase === "/") {
     router.all(/.*/, expressHandler);
   } else {
-    router.all(new RegExp(`^${escapeRegExp(normalizedBase)}(\\/.*)?$`), expressHandler);
+    router.all(
+      new RegExp(`^${escapeRegExp(normalizedBase)}(\\/.*)?$`),
+      expressHandler,
+    );
   }
 
   return router;
