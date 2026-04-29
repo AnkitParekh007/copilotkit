@@ -22,13 +22,26 @@ type GateInternals = {
 };
 
 function makeGate(): HTMLElement & GateInternals {
-  const el = document.createElement("cpk-thread-gate") as unknown as HTMLElement &
-    GateInternals;
+  const el = document.createElement(
+    "cpk-thread-gate",
+  ) as unknown as HTMLElement & GateInternals;
   // Stub render to avoid jsdom 29's CSS-shorthand parser crash on the
   // gate's `linear-gradient(...)` background strings during template parse.
   // We're testing behavior (cookie I/O, code validation, timers, events),
   // not template output.
   Object.defineProperty(el, "render", { value: () => null });
+  return el;
+}
+
+/**
+ * Make a gate and connect it to the document so `isConnected` is true.
+ * Required for tests that drive timer callbacks — the gate's setTimeout
+ * bodies bail when `!this.isConnected` so they don't mutate state on a
+ * torn-down element.
+ */
+function makeConnectedGate(): HTMLElement & GateInternals {
+  const el = makeGate();
+  document.body.appendChild(el);
   return el;
 }
 
@@ -92,7 +105,7 @@ describe("cpk-thread-gate", () => {
 
   it("flashes invalid-code state on a wrong code, then auto-clears after 1600ms", () => {
     installCookieMock("");
-    const gate = makeGate();
+    const gate = makeConnectedGate();
     gate._submitThreadsCode("nope");
     expect(gate._threadsGateCodeInvalid).toBe(true);
     // No cookie should have been written for an invalid code.
@@ -106,7 +119,7 @@ describe("cpk-thread-gate", () => {
 
   it("on correct code: writes the cookie immediately and dispatches `unlock` after 2000ms", () => {
     installCookieMock("");
-    const gate = makeGate();
+    const gate = makeConnectedGate();
     let unlockedCount = 0;
     gate.addEventListener("unlock", () => {
       unlockedCount++;
@@ -130,9 +143,48 @@ describe("cpk-thread-gate", () => {
 
   it("trims whitespace and is case-insensitive when comparing the access code", () => {
     installCookieMock("");
-    const gate = makeGate();
+    const gate = makeConnectedGate();
     gate._submitThreadsCode("  earlyaccess  ");
     expect(gate._threadsUnlocking).toBe(true);
     expect(lastWrittenCookie).toContain("cpk_threads_access=1");
+  });
+
+  it("disconnecting mid-flash cancels the invalid-flash timer (no late state mutation)", () => {
+    installCookieMock("");
+    const gate = makeConnectedGate();
+    gate._submitThreadsCode("nope");
+    expect(gate._threadsGateCodeInvalid).toBe(true);
+
+    // Tear down before the 1600ms flash timer has fired.
+    document.body.removeChild(gate);
+    expect(gate.isConnected).toBe(false);
+
+    // Advance well past the flash window. The disconnectedCallback cleared
+    // the timer, so the callback never runs and the field stays as it was
+    // — no requestUpdate() against a torn-down element.
+    vi.advanceTimersByTime(5000);
+    expect(gate._threadsGateCodeInvalid).toBe(true);
+  });
+
+  it("disconnecting mid-unlock cancels the unlock-transition timer", () => {
+    installCookieMock("");
+    const gate = makeConnectedGate();
+    let unlockedCount = 0;
+    gate.addEventListener("unlock", () => {
+      unlockedCount++;
+    });
+    gate._submitThreadsCode("earlyaccess");
+    expect(gate._threadsUnlocking).toBe(true);
+
+    // Detach before the 2000ms unlock timer has fired.
+    document.body.removeChild(gate);
+    expect(gate.isConnected).toBe(false);
+
+    // Advance past the unlock window — the timer is cleared so the unlock
+    // event must never fire and the unlocking flag stays true (the body
+    // that would flip it back to false is skipped).
+    vi.advanceTimersByTime(5000);
+    expect(unlockedCount).toBe(0);
+    expect(gate._threadsUnlocking).toBe(true);
   });
 });
