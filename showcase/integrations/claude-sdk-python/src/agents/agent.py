@@ -362,6 +362,36 @@ def _execute_tool(name: str, tool_input: dict[str, Any], state: AgentState, conv
     return f"Unknown tool: {name}", None
 
 
+def _build_frontend_tools(input_data: RunAgentInput) -> list[dict[str, Any]]:
+    """Extract frontend-defined tools from the AG-UI request.
+
+    The CopilotKit runtime forwards frontend tool definitions (registered
+    via ``useFrontendTool``, ``useHumanInTheLoop``, etc.) in
+    ``input_data.tools``. We convert them to the Anthropic ``tools``
+    schema so the LLM can call them. The runtime intercepts the resulting
+    tool-call events and routes them to the frontend for resolution.
+    """
+    out: list[dict[str, Any]] = []
+    for t in (input_data.tools or []):
+        name = getattr(t, "name", None) or (
+            t.get("name") if isinstance(t, dict) else None
+        )
+        description = getattr(t, "description", None) or (
+            t.get("description", "") if isinstance(t, dict) else ""
+        )
+        parameters = getattr(t, "parameters", None) or (
+            t.get("parameters", {}) if isinstance(t, dict) else {}
+        )
+        if not name:
+            continue
+        out.append({
+            "name": name,
+            "description": description or "",
+            "input_schema": parameters or {"type": "object", "properties": {}},
+        })
+    return out
+
+
 async def run_agent(
     input_data: RunAgentInput,
     *,
@@ -398,9 +428,57 @@ async def run_agent(
     # supplied we preserve the structured content list (image blocks,
     # document text, etc.) — otherwise we collapse to a flat string for
     # the text-only happy path used by most demos.
+    #
+    # AG-UI delivers three message roles:
+    #   - "user"      → plain user text
+    #   - "assistant" → assistant text + optional tool_use blocks
+    #   - "tool"      → tool result from a resolved frontend tool
+    #
+    # Anthropic's Messages API represents tool results as a "user" role
+    # message with content blocks of type "tool_result". We must convert
+    # AG-UI "tool" messages into that shape so the LLM sees the resolved
+    # result and aimock's ``hasToolResult`` matcher fires correctly.
     messages: list[dict[str, Any]] = []
     for msg in (input_data.messages or []):
         role = msg.role.value if hasattr(msg.role, "value") else str(msg.role)
+
+        # Handle tool result messages from AG-UI (resolved frontend tools).
+        # Convert to Anthropic's format: role="user" with tool_result blocks.
+        if role == "tool":
+            tool_call_id = getattr(msg, "tool_call_id", None) or (
+                getattr(msg, "toolCallId", None)
+            )
+            raw_content = getattr(msg, "content", None)
+            result_text = ""
+            if isinstance(raw_content, str):
+                result_text = raw_content
+            elif isinstance(raw_content, list):
+                parts = []
+                for part in raw_content:
+                    if hasattr(part, "text"):
+                        parts.append(part.text)
+                    elif isinstance(part, dict) and "text" in part:
+                        parts.append(part["text"])
+                parts_text = "".join(parts)
+                if parts_text:
+                    result_text = parts_text
+                else:
+                    result_text = json.dumps(raw_content)
+            if tool_call_id:
+                # Anthropic expects the assistant message containing the
+                # tool_use to precede this tool_result message. The runtime
+                # ensures message ordering, so we just need to emit the
+                # tool_result in the right shape.
+                messages.append({
+                    "role": "user",
+                    "content": [{
+                        "type": "tool_result",
+                        "tool_use_id": tool_call_id,
+                        "content": result_text,
+                    }],
+                })
+            continue
+
         if role not in ("user", "assistant"):
             continue
 
@@ -424,6 +502,53 @@ async def run_agent(
             if converted_parts:
                 messages.append({"role": role, "content": converted_parts})
             continue
+
+        # For assistant messages, check if there are tool calls (AG-UI's
+        # AssistantMessage stores them in `tool_calls`, not in `content`).
+        # Anthropic requires tool_use blocks in the assistant content so
+        # the subsequent tool_result can pair with them.
+        if role == "assistant":
+            msg_tool_calls = getattr(msg, "tool_calls", None)
+            text_content = ""
+            if isinstance(raw_content, str):
+                text_content = raw_content
+            elif isinstance(raw_content, list):
+                for part in raw_content:
+                    if hasattr(part, "text"):
+                        text_content += part.text
+                    elif isinstance(part, dict) and "text" in part:
+                        text_content += part["text"]
+
+            if msg_tool_calls:
+                content_blocks: list[dict[str, Any]] = []
+                if text_content:
+                    content_blocks.append({"type": "text", "text": text_content})
+                for tc in msg_tool_calls:
+                    # AG-UI ToolCall: {id, function: {name, arguments}}
+                    tc_id = getattr(tc, "id", None) or (tc.get("id") if isinstance(tc, dict) else None)
+                    func = getattr(tc, "function", None) or (tc.get("function") if isinstance(tc, dict) else None)
+                    if func:
+                        tc_name = getattr(func, "name", None) or (func.get("name") if isinstance(func, dict) else "unknown")
+                        tc_args_str = getattr(func, "arguments", None) or (func.get("arguments", "{}") if isinstance(func, dict) else "{}")
+                    else:
+                        tc_name = "unknown"
+                        tc_args_str = "{}"
+                    try:
+                        tc_args = json.loads(tc_args_str) if isinstance(tc_args_str, str) else tc_args_str
+                    except json.JSONDecodeError:
+                        tc_args = {}
+                    content_blocks.append({
+                        "type": "tool_use",
+                        "id": tc_id or "unknown",
+                        "name": tc_name,
+                        "input": tc_args,
+                    })
+                messages.append({"role": "assistant", "content": content_blocks})
+                continue
+            elif text_content:
+                messages.append({"role": "assistant", "content": text_content})
+                continue
+            # Fall through to the generic handler if nothing matched
 
         content = ""
         if isinstance(raw_content, str):
@@ -465,10 +590,24 @@ async def run_agent(
             role="assistant",
         ))
 
-        # Stream Claude response. BYOC / multimodal demos opt out of the
-        # shared sales-assistant tool schemas so the model replies as pure
-        # text (or structured JSON for BYOC) rather than chasing tool
-        # calls.
+        # Build the combined tools list: backend TOOLS + any frontend-
+        # defined tools forwarded by the CopilotKit runtime in
+        # input_data.tools. Frontend tools (registered via useFrontendTool,
+        # useHumanInTheLoop, etc.) are included so the LLM can call them;
+        # the runtime intercepts the resulting events and routes them to
+        # the frontend for resolution. Backend tools are executed locally.
+        backend_tool_names = {t["name"] for t in TOOLS}
+        frontend_tools = _build_frontend_tools(input_data)
+        # Merge: backend tools first, then frontend tools that don't
+        # shadow a backend tool (frontend wins when names collide, because
+        # the frontend registration means the runtime should intercept).
+        frontend_tool_names = {t["name"] for t in frontend_tools}
+        combined_tools: list[dict[str, Any]] = []
+        for t in TOOLS:
+            if t["name"] not in frontend_tool_names:
+                combined_tools.append(t)
+        combined_tools.extend(frontend_tools)
+
         stream_kwargs: dict[str, Any] = {
             "model": os.getenv("ANTHROPIC_MODEL", "claude-opus-4-5"),
             "max_tokens": 4096,
@@ -476,7 +615,7 @@ async def run_agent(
             "messages": messages,
         }
         if not disable_tools:
-            stream_kwargs["tools"] = TOOLS  # type: ignore[assignment]
+            stream_kwargs["tools"] = combined_tools  # type: ignore[assignment]
 
         try:
             async with client.messages.stream(**stream_kwargs) as stream:
@@ -558,6 +697,30 @@ async def run_agent(
         if not tool_calls:
             break
 
+        # Separate tool calls into backend (locally executed) and frontend
+        # (deferred to the CopilotKit runtime / frontend for resolution).
+        # A tool whose name was registered on the frontend (present in
+        # frontend_tool_names) is a frontend tool even if the backend also
+        # defines it — the frontend registration takes precedence because
+        # hooks like useHumanInTheLoop rely on intercepting the tool call.
+        has_frontend_tool = any(
+            tc["name"] in frontend_tool_names for tc in tool_calls
+        )
+
+        if has_frontend_tool:
+            # At least one tool call targets a frontend tool. Break the
+            # agentic loop: the CopilotKit runtime will intercept the
+            # pending frontend tool call(s), route them to the frontend
+            # for user interaction, and re-invoke the agent with the
+            # resolved tool result(s) in a subsequent request.
+            #
+            # We do NOT emit ToolCallResultEvent for frontend tools and
+            # we do NOT add them to the message history — the runtime
+            # owns the continuation from here.
+            break
+
+        # All tool calls are backend-only — execute locally and continue
+        # the agentic loop.
         # Add assistant turn with tool calls to message history
         assistant_content: list[dict[str, Any]] = []
         if response_text:

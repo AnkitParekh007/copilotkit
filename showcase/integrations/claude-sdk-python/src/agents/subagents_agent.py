@@ -385,6 +385,7 @@ async def run_subagents_agent(
                     ToolCallResultEvent(
                         type=EventType.TOOL_CALL_RESULT,
                         tool_call_id=tc["id"],
+                        message_id=f"{msg_id}-tool-result-{tc['id']}",
                         content=err,
                     )
                 )
@@ -440,6 +441,7 @@ async def run_subagents_agent(
                 ToolCallResultEvent(
                     type=EventType.TOOL_CALL_RESULT,
                     tool_call_id=tc["id"],
+                    message_id=f"{msg_id}-tool-result-{tc['id']}",
                     content=result_text,
                 )
             )
