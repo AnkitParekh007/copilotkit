@@ -33,7 +33,7 @@ function Chat() {
     parameters: z.object({
       location: z.string(),
     }),
-    render: ({ args, result, status }: any) => {
+    render: ({ parameters, result, status }: any) => {
       if (status !== "complete") {
         return (
           <div className="bg-[#667eea] text-white p-4 rounded-lg max-w-md">
@@ -55,7 +55,7 @@ function Chat() {
 
       return (
         <WeatherCard
-          location={args.location}
+          location={parameters.location}
           themeColor={themeColor}
           result={weatherResult}
         />
