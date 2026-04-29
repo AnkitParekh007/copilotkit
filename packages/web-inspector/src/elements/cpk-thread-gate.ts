@@ -1,4 +1,4 @@
-import { LitElement, html, nothing } from "lit";
+import { LitElement, css, html, nothing } from "lit";
 
 // ─── cpk-thread-gate ─────────────────────────────────────────────────────────
 // Owns the early-access gate UI and its state. Reads the unlock cookie on
@@ -22,6 +22,297 @@ class CpkThreadGate extends LitElement {
   private _threadsGateCodeInvalid = false;
   private _threadsGateInvalidTimer: ReturnType<typeof setTimeout> | null = null;
   private _threadsUnlockingTimer: ReturnType<typeof setTimeout> | null = null;
+
+  static styles = css`
+    :host {
+      display: block;
+      height: 100%;
+    }
+
+    .cpk-gate {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 40px 24px;
+      min-height: 100%;
+      text-align: center;
+      background: linear-gradient(135deg, #f5f4ff 0%, #ede9fe 100%);
+      overflow: hidden;
+    }
+
+    /* Blurred ellipses from Figma/storybook */
+    .cpk-gate__blob {
+      position: absolute;
+      border-radius: 50%;
+      pointer-events: none;
+    }
+
+    .cpk-gate__blob--a {
+      width: 570px;
+      height: 570px;
+      top: -80px;
+      left: -120px;
+      opacity: 0.25;
+      background: #757cf2;
+      filter: blur(120px);
+    }
+
+    .cpk-gate__blob--b {
+      width: 570px;
+      height: 570px;
+      bottom: -100px;
+      right: -80px;
+      opacity: 0.2;
+      background: #ffac4d;
+      filter: blur(120px);
+    }
+
+    .cpk-gate__blob--c {
+      width: 400px;
+      height: 400px;
+      bottom: 20px;
+      left: -60px;
+      opacity: 0.15;
+      background: #ffac4d;
+      filter: blur(100px);
+    }
+
+    /* ── Early-access card ── */
+    .cpk-gate__card {
+      position: relative;
+      z-index: 1;
+      background: #ffffff;
+      border: 1px solid #e5e5ea;
+      border-radius: 20px;
+      box-shadow:
+        0 16px 48px rgba(1, 5, 7, 0.12),
+        0 2px 6px rgba(1, 5, 7, 0.05);
+      padding: 28px;
+      width: 400px;
+      max-width: 100%;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+      text-align: left;
+      font-family: "Plus Jakarta Sans", system-ui, sans-serif;
+    }
+
+    .cpk-gate__pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: #f3f3fc;
+      color: #757cf2;
+      font-family: "Spline Sans Mono", ui-monospace, monospace;
+      font-size: 10px;
+      font-weight: 500;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .cpk-gate__heading {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .cpk-gate__title {
+      font-family: "Plus Jakarta Sans", system-ui, sans-serif;
+      font-size: 24px;
+      font-weight: 700;
+      color: #010507;
+      line-height: 1.2;
+      letter-spacing: -0.015em;
+      margin: 0;
+    }
+
+    .cpk-gate__title-accent {
+      background: linear-gradient(90deg, #757cf2 0%, #5ae4bb 100%);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .cpk-gate__description {
+      font-size: 14px;
+      font-weight: 500;
+      color: #5c5c66;
+      line-height: 1.55;
+      margin: 0;
+    }
+
+    .cpk-gate__bullets {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding: 4px 0;
+    }
+
+    .cpk-gate__bullet {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .cpk-gate__bullet-icon {
+      flex-shrink: 0;
+    }
+
+    .cpk-gate__bullet-label {
+      font-size: 13px;
+      font-weight: 500;
+      color: #010507;
+    }
+
+    .cpk-gate__cta {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      text-decoration: none;
+      cursor: pointer;
+    }
+
+    .cpk-gate__cta-pill {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: #010507;
+      color: #ffffff;
+      font-family: "Spline Sans Mono", ui-monospace, monospace;
+      font-size: 13px;
+      font-weight: 500;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      padding: 14px 22px;
+      border-radius: 999px;
+      box-shadow: 0 4px 12px rgba(1, 5, 7, 0.18);
+    }
+
+    .cpk-gate__cta-arrow {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 36px;
+      height: 36px;
+      border-radius: 999px;
+      background: #010507;
+      color: #ffffff;
+      box-shadow: 0 4px 12px rgba(1, 5, 7, 0.18);
+    }
+
+    .cpk-gate__invite {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding-top: 14px;
+      border-top: 1px dashed #e5e5ea;
+    }
+
+    .cpk-gate__invite-label {
+      font-size: 12px;
+      font-weight: 500;
+      color: #8a8a94;
+    }
+
+    .cpk-gate__invite-row {
+      display: flex;
+      gap: 8px;
+    }
+
+    .cpk-gate__input-wrap {
+      flex: 1;
+      background: #ffffff;
+      border: 1px solid #e5e5ea;
+      border-radius: 10px;
+      padding: 2px 4px 2px 12px;
+      transition: border-color 150ms ease;
+    }
+
+    .cpk-gate__input-wrap--invalid {
+      border-color: #fa5f67;
+    }
+
+    .cpk-gate__input {
+      width: 100%;
+      padding: 10px 0;
+      font-family: "Plus Jakarta Sans", system-ui, sans-serif;
+      font-size: 13px;
+      font-weight: 500;
+      color: #010507;
+      background: transparent;
+      border: none;
+      outline: none;
+    }
+
+    .cpk-gate__submit {
+      background: #010507;
+      color: #ffffff;
+      border: none;
+      border-radius: 10px;
+      padding: 0 16px;
+      font-family: "Spline Sans Mono", ui-monospace, monospace;
+      font-size: 11px;
+      font-weight: 500;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    .cpk-gate__error {
+      font-size: 11px;
+      font-weight: 500;
+      color: #fa5f67;
+    }
+
+    /* ── Unlocking confirmation card ── */
+    .cpk-gate__welcome {
+      position: relative;
+      z-index: 1;
+      background: #ffffff;
+      border: 1px solid #e5e5ea;
+      border-radius: 20px;
+      box-shadow:
+        0 16px 48px rgba(1, 5, 7, 0.12),
+        0 2px 6px rgba(1, 5, 7, 0.05);
+      padding: 32px;
+      width: 340px;
+      max-width: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+      text-align: center;
+      font-family: "Plus Jakarta Sans", system-ui, sans-serif;
+    }
+
+    .cpk-gate__welcome-badge {
+      width: 56px;
+      height: 56px;
+      border-radius: 999px;
+      background: linear-gradient(135deg, #bec2ff 0%, #85ecce 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .cpk-gate__welcome-title {
+      font-size: 18px;
+      font-weight: 700;
+      color: #010507;
+    }
+
+    .cpk-gate__welcome-sub {
+      font-size: 13px;
+      color: #5c5c66;
+      line-height: 1.5;
+    }
+  `;
 
   connectedCallback(): void {
     super.connectedCallback();
@@ -56,22 +347,10 @@ class CpkThreadGate extends LitElement {
 
   private renderThreadsGate() {
     return html`
-      <div style="
-        position:relative;
-        display:flex;
-        flex-direction:column;
-        align-items:center;
-        justify-content:center;
-        padding:40px 24px;
-        min-height:100%;
-        text-align:center;
-        background:linear-gradient(135deg,#f5f4ff 0%,#ede9fe 100%);
-        overflow:hidden;
-      ">
-        <!-- Blurred ellipses from Figma/storybook -->
-        <div style="position:absolute;width:570px;height:570px;border-radius:50%;top:-80px;left:-120px;opacity:0.25;background:#757CF2;filter:blur(120px);pointer-events:none;"></div>
-        <div style="position:absolute;width:570px;height:570px;border-radius:50%;bottom:-100px;right:-80px;opacity:0.2;background:#FFAC4D;filter:blur(120px);pointer-events:none;"></div>
-        <div style="position:absolute;width:400px;height:400px;border-radius:50%;bottom:20px;left:-60px;opacity:0.15;background:#FFAC4D;filter:blur(100px);pointer-events:none;"></div>
+      <div class="cpk-gate">
+        <div class="cpk-gate__blob cpk-gate__blob--a"></div>
+        <div class="cpk-gate__blob cpk-gate__blob--b"></div>
+        <div class="cpk-gate__blob cpk-gate__blob--c"></div>
 
         ${
           this._threadsUnlocking
@@ -84,97 +363,39 @@ class CpkThreadGate extends LitElement {
 
   private _renderEarlyAccessCard() {
     const invalid = this._threadsGateCodeInvalid;
+    const inputWrapClass = invalid
+      ? "cpk-gate__input-wrap cpk-gate__input-wrap--invalid"
+      : "cpk-gate__input-wrap";
     return html`
-      <div
-        style="
-          position:relative;
-          z-index:1;
-          background:#ffffff;
-          border:1px solid #E5E5EA;
-          border-radius:20px;
-          box-shadow:0 16px 48px rgba(1,5,7,0.12),0 2px 6px rgba(1,5,7,0.05);
-          padding:28px;
-          width:400px;
-          max-width:100%;
-          display:flex;
-          flex-direction:column;
-          gap:18px;
-          text-align:left;
-          font-family:'Plus Jakarta Sans', system-ui, sans-serif;
-        "
-      >
+      <div class="cpk-gate__card">
         <!-- Kicker pill -->
         <div>
-          <span
-            style="
-              display:inline-flex;
-              align-items:center;
-              gap:4px;
-              padding:4px 10px;
-              border-radius:999px;
-              background:#F3F3FC;
-              color:#757CF2;
-              font-family:'Spline Sans Mono', ui-monospace, monospace;
-              font-size:10px;
-              font-weight:500;
-              letter-spacing:0.08em;
-              text-transform:uppercase;
-            "
-            >Early Access</span
-          >
+          <span class="cpk-gate__pill">Early Access</span>
         </div>
 
         <!-- Title + description -->
-        <div style="display:flex;flex-direction:column;gap:8px;">
-          <h2
-            style="
-              font-family:'Plus Jakarta Sans', system-ui, sans-serif;
-              font-size:24px;
-              font-weight:700;
-              color:#010507;
-              line-height:1.2;
-              letter-spacing:-0.015em;
-              margin:0;
-            "
-          >
-            <span
-              style="
-                background:linear-gradient(90deg, #757CF2 0%, #5AE4BB 100%);
-                -webkit-background-clip:text;
-                background-clip:text;
-                color:transparent;
-                -webkit-text-fill-color:transparent;
-              "
-              >Threads</span
-            >
+        <div class="cpk-gate__heading">
+          <h2 class="cpk-gate__title">
+            <span class="cpk-gate__title-accent">Threads</span>
             are in private beta
           </h2>
-          <p
-            style="
-              font-size:14px;
-              font-weight:500;
-              color:#5C5C66;
-              line-height:1.55;
-              margin:0;
-            "
-          >
+          <p class="cpk-gate__description">
             Spin up separate conversations with your agent, one per task, bug,
             or feature, and jump back into any of them without losing context.
           </p>
         </div>
 
         <!-- Bullets -->
-        <div
-          style="display:flex;flex-direction:column;gap:8px;padding:4px 0;"
-        >
+        <div class="cpk-gate__bullets">
           ${[
             "One agent, many conversations",
             "Persistent history across sessions",
             "Jump between threads in a click",
           ].map(
             (label) => html`
-              <div style="display:flex;align-items:center;gap:10px;">
+              <div class="cpk-gate__bullet">
                 <svg
+                  class="cpk-gate__bullet-icon"
                   width="14"
                   height="14"
                   viewBox="0 0 24 24"
@@ -183,13 +404,10 @@ class CpkThreadGate extends LitElement {
                   stroke-width="2.5"
                   stroke-linecap="round"
                   stroke-linejoin="round"
-                  style="flex-shrink:0;"
                 >
                   <polyline points="20 6 9 17 4 12"></polyline>
                 </svg>
-                <span style="font-size:13px;font-weight:500;color:#010507;"
-                  >${label}</span
-                >
+                <span class="cpk-gate__bullet-label">${label}</span>
               </div>
             `,
           )}
@@ -198,48 +416,13 @@ class CpkThreadGate extends LitElement {
         <!-- Primary CTA: dark MonoPillButton with adjacent arrow circle -->
         <div>
           <a
+            class="cpk-gate__cta"
             href=${CpkThreadGate.THREADS_REQUEST_URL}
             target="_blank"
             rel="noopener noreferrer"
-            style="
-              display:inline-flex;
-              align-items:center;
-              gap:8px;
-              text-decoration:none;
-              cursor:pointer;
-            "
           >
-            <span
-              style="
-                display:inline-flex;
-                align-items:center;
-                justify-content:center;
-                background:#010507;
-                color:#ffffff;
-                font-family:'Spline Sans Mono', ui-monospace, monospace;
-                font-size:13px;
-                font-weight:500;
-                letter-spacing:0.06em;
-                text-transform:uppercase;
-                padding:14px 22px;
-                border-radius:999px;
-                box-shadow:0 4px 12px rgba(1,5,7,0.18);
-              "
-              >Request Early Access</span
-            >
-            <span
-              style="
-                display:inline-flex;
-                align-items:center;
-                justify-content:center;
-                width:36px;
-                height:36px;
-                border-radius:999px;
-                background:#010507;
-                color:#ffffff;
-                box-shadow:0 4px 12px rgba(1,5,7,0.18);
-              "
-            >
+            <span class="cpk-gate__cta-pill">Request Early Access</span>
+            <span class="cpk-gate__cta-arrow">
               <svg
                 width="14"
                 height="14"
@@ -258,44 +441,15 @@ class CpkThreadGate extends LitElement {
         </div>
 
         <!-- Divider + invite-code section -->
-        <div
-          style="
-            display:flex;
-            flex-direction:column;
-            gap:8px;
-            padding-top:14px;
-            border-top:1px dashed #E5E5EA;
-          "
-        >
-          <span style="font-size:12px;font-weight:500;color:#8A8A94;"
-            >Have an invite code?</span
-          >
-          <div style="display:flex;gap:8px;">
-            <div
-              style="
-                flex:1;
-                background:#ffffff;
-                border:1px solid ${invalid ? "#FA5F67" : "#E5E5EA"};
-                border-radius:10px;
-                padding:2px 4px 2px 12px;
-                transition:border-color 150ms ease;
-              "
-            >
+        <div class="cpk-gate__invite">
+          <span class="cpk-gate__invite-label">Have an invite code?</span>
+          <div class="cpk-gate__invite-row">
+            <div class=${inputWrapClass}>
               <input
                 id="cpk-gate-input"
+                class="cpk-gate__input"
                 type="text"
                 placeholder="Enter access code"
-                style="
-                  width:100%;
-                  padding:10px 0;
-                  font-family:'Plus Jakarta Sans', system-ui, sans-serif;
-                  font-size:13px;
-                  font-weight:500;
-                  color:#010507;
-                  background:transparent;
-                  border:none;
-                  outline:none;
-                "
                 @keydown=${(e: KeyboardEvent) => {
                   if (e.key === "Enter") {
                     this._submitThreadsCode(
@@ -306,20 +460,7 @@ class CpkThreadGate extends LitElement {
               />
             </div>
             <button
-              style="
-                background:#010507;
-                color:#ffffff;
-                border:none;
-                border-radius:10px;
-                padding:0 16px;
-                font-family:'Spline Sans Mono', ui-monospace, monospace;
-                font-size:11px;
-                font-weight:500;
-                letter-spacing:0.06em;
-                text-transform:uppercase;
-                cursor:pointer;
-                white-space:nowrap;
-              "
+              class="cpk-gate__submit"
               @click=${() => {
                 const input = this.shadowRoot?.getElementById(
                   "cpk-gate-input",
@@ -333,7 +474,7 @@ class CpkThreadGate extends LitElement {
           ${
             invalid
               ? html`
-                  <div style="font-size: 11px; font-weight: 500; color: #fa5f67">
+                  <div class="cpk-gate__error">
                     That code isn't valid. Double-check your invite email.
                   </div>
                 `
@@ -346,38 +487,8 @@ class CpkThreadGate extends LitElement {
 
   private _renderUnlockingCard() {
     return html`
-      <div
-        style="
-          position: relative;
-          z-index: 1;
-          background: #ffffff;
-          border: 1px solid #e5e5ea;
-          border-radius: 20px;
-          box-shadow:
-            0 16px 48px rgba(1, 5, 7, 0.12),
-            0 2px 6px rgba(1, 5, 7, 0.05);
-          padding: 32px;
-          width: 340px;
-          max-width: 100%;
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          gap: 16px;
-          text-align: center;
-          font-family: &quot;Plus Jakarta Sans&quot;, system-ui, sans-serif;
-        "
-      >
-        <div
-          style="
-            width: 56px;
-            height: 56px;
-            border-radius: 999px;
-            background: linear-gradient(135deg, #bec2ff 0%, #85ecce 100%);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-          "
-        >
+      <div class="cpk-gate__welcome">
+        <div class="cpk-gate__welcome-badge">
           <svg
             width="24"
             height="24"
@@ -391,12 +502,8 @@ class CpkThreadGate extends LitElement {
             <polyline points="20 6 9 17 4 12"></polyline>
           </svg>
         </div>
-        <div style="font-size: 18px; font-weight: 700; color: #010507">
-          Welcome to Threads
-        </div>
-        <div style="font-size: 13px; color: #5c5c66; line-height: 1.5">
-          Loading your conversations…
-        </div>
+        <div class="cpk-gate__welcome-title">Welcome to Threads</div>
+        <div class="cpk-gate__welcome-sub">Loading your conversations…</div>
       </div>
     `;
   }
