@@ -486,30 +486,40 @@ describe("InMemoryAgentRunner — listThreads / getThreadMessages", () => {
     });
 
     it("returns threads sorted most-recently-updated first", async () => {
-      // Run a second thread after a short delay so timestamps differ
-      await new Promise((r) => setTimeout(r, 5));
+      // Force a strictly-later timestamp deterministically rather than relying
+      // on a 5ms real-time sleep. The runner records Date.now() inside the
+      // synchronous run path, so a one-shot mock that returns "now + 1000ms"
+      // for the next createdAt sample is enough.
+      const baseline = Date.now();
+      const dateNowSpy = vi
+        .spyOn(Date, "now")
+        .mockReturnValue(baseline + 1000);
       const agent2 = new MessagePopulatingTestAgent(
         "test-agent",
         [userMessage],
         [assistantMessage],
       );
       agent2.agentId = "test-agent";
-      await firstValueFrom(
-        runner
-          .run({
-            threadId: "list-threads-thread-2",
-            agent: agent2,
-            input: {
+      try {
+        await firstValueFrom(
+          runner
+            .run({
               threadId: "list-threads-thread-2",
-              runId: "run-lt-2",
-              messages: [userMessage],
-              state: {},
-              tools: [],
-              context: [],
-            },
-          })
-          .pipe(toArray()),
-      );
+              agent: agent2,
+              input: {
+                threadId: "list-threads-thread-2",
+                runId: "run-lt-2",
+                messages: [userMessage],
+                state: {},
+                tools: [],
+                context: [],
+              },
+            })
+            .pipe(toArray()),
+        );
+      } finally {
+        dateNowSpy.mockRestore();
+      }
 
       const threads = runner.listThreads();
       const ids = threads.map((t: InMemoryThread) => t.id);
@@ -719,6 +729,85 @@ describe("InMemoryAgentRunner — listThreads / getThreadMessages", () => {
       await run("thread-multi-state", "run-b", second);
 
       expect(runner.getThreadState("thread-multi-state")).toEqual(second);
+    });
+
+    it("returns the last snapshot when a single run emits multiple STATE_SNAPSHOT events", async () => {
+      const first = { tick: 1 };
+      const last = { tick: 2 };
+      const stateAgent = new TestAgent(
+        [
+          { type: EventType.STATE_SNAPSHOT, snapshot: first } as BaseEvent,
+          { type: EventType.STATE_SNAPSHOT, snapshot: last } as BaseEvent,
+        ],
+        true,
+      );
+      await firstValueFrom(
+        runner
+          .run({
+            threadId: "thread-multi-state-single-run",
+            agent: stateAgent,
+            input: {
+              threadId: "thread-multi-state-single-run",
+              runId: "run-state-multi",
+              messages: [],
+              state: {},
+              tools: [],
+              context: [],
+            },
+          })
+          .pipe(toArray()),
+      );
+
+      expect(runner.getThreadState("thread-multi-state-single-run")).toEqual(
+        last,
+      );
+    });
+
+    describe("non-object snapshot guard", () => {
+      // The handler exposes getThreadState() as JSON, so the response shape
+      // must always be either a plain object or null. A misbehaving runtime
+      // that emits a primitive, null, or array snapshot should collapse to
+      // null rather than poison the response.
+      const nonObjectCases: Array<{ name: string; snapshot: unknown }> = [
+        { name: "null payload", snapshot: null },
+        { name: "string primitive", snapshot: "not-a-state" },
+        { name: "number primitive", snapshot: 42 },
+        { name: "boolean primitive", snapshot: true },
+        { name: "array payload", snapshot: [1, 2, 3] },
+      ];
+
+      for (const { name, snapshot } of nonObjectCases) {
+        it(`returns null for a ${name}`, async () => {
+          const stateAgent = new TestAgent(
+            [
+              {
+                type: EventType.STATE_SNAPSHOT,
+                snapshot,
+              } as unknown as BaseEvent,
+            ],
+            true,
+          );
+          const threadId = `thread-bad-snapshot-${name.replace(/\s+/g, "-")}`;
+          await firstValueFrom(
+            runner
+              .run({
+                threadId,
+                agent: stateAgent,
+                input: {
+                  threadId,
+                  runId: `run-bad-${name.replace(/\s+/g, "-")}`,
+                  messages: [],
+                  state: {},
+                  tools: [],
+                  context: [],
+                },
+              })
+              .pipe(toArray()),
+          );
+
+          expect(runner.getThreadState(threadId)).toBeNull();
+        });
+      }
     });
   });
 });

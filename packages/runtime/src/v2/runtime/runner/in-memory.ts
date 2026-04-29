@@ -1,19 +1,18 @@
-import {
-  AgentRunner,
+import type {
   AgentRunnerConnectRequest,
   AgentRunnerIsRunningRequest,
   AgentRunnerRunRequest,
-  type AgentRunnerStopRequest,
 } from "./agent-runner";
-import { Observable, ReplaySubject } from "rxjs";
-import {
+import { AgentRunner, type AgentRunnerStopRequest } from "./agent-runner";
+import type { Observable } from "rxjs";
+import { ReplaySubject } from "rxjs";
+import type {
   AbstractAgent,
   BaseEvent,
-  EventType,
   Message,
   RunStartedEvent,
-  compactEvents,
 } from "@ag-ui/client";
+import { EventType, compactEvents } from "@ag-ui/client";
 import { finalizeRunEvents } from "@copilotkit/shared";
 
 interface HistoricRun {
@@ -442,7 +441,15 @@ export class InMemoryAgentRunner extends AgentRunner {
       const event = events[i]!;
       if (event.type === EventType.STATE_SNAPSHOT) {
         const snapshot = (event as { snapshot?: unknown }).snapshot;
-        if (snapshot && typeof snapshot === "object") {
+        // Reject anything that is not a plain object: null, primitives, and
+        // arrays all collapse to null. The HTTP contract expects a state
+        // map keyed by string, so a runtime that emitted a malformed
+        // STATE_SNAPSHOT must not poison the response.
+        if (
+          snapshot !== null &&
+          typeof snapshot === "object" &&
+          !Array.isArray(snapshot)
+        ) {
           return snapshot as Record<string, unknown>;
         }
         return null;
