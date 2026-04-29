@@ -355,6 +355,7 @@ async def run_shared_state_read_write_agent(
                 ToolCallResultEvent(
                     type=EventType.TOOL_CALL_RESULT,
                     tool_call_id=tc["id"],
+                    message_id=f"{msg_id}-tool-result-{tc['id']}",
                     content=result_text,
                 )
             )

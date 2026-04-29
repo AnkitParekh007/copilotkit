@@ -53,13 +53,111 @@ async def run_hitl_in_chat_agent(input_data: RunAgentInput) -> AsyncIterator[str
     encoder = EventEncoder()
     client = anthropic.AsyncAnthropic(api_key=os.getenv("ANTHROPIC_API_KEY", ""))
 
-    # Convert AG-UI messages to Anthropic format (text-only).
+    # Convert AG-UI messages to Anthropic format.
+    #
+    # AG-UI delivers three message roles:
+    #   - "user"      → plain user text
+    #   - "assistant" → assistant text + optional tool_use blocks
+    #   - "tool"      → tool result from a resolved frontend tool
+    #
+    # When the CopilotKit runtime re-invokes this agent after the user
+    # resolves a frontend tool (e.g. picks a time slot in the book_call
+    # HITL UI), the messages array includes:
+    #   1. assistant message with tool_use content (the original tool call)
+    #   2. tool message with the resolved result
+    #
+    # Anthropic's Messages API represents tool results as a "user" role
+    # message with content blocks of type "tool_result". We must convert
+    # AG-UI "tool" messages into that shape, and assistant messages with
+    # tool_use content into Anthropic's structured format, so the LLM
+    # sees the full conversation and aimock's ``hasToolResult`` matcher
+    # fires correctly.
     messages: list[dict[str, Any]] = []
     for msg in (input_data.messages or []):
         role = msg.role.value if hasattr(msg.role, "value") else str(msg.role)
+
+        # Handle tool result messages from AG-UI (resolved frontend tools).
+        if role == "tool":
+            tool_call_id = getattr(msg, "tool_call_id", None) or (
+                getattr(msg, "toolCallId", None)
+            )
+            raw = getattr(msg, "content", None)
+            result_text = ""
+            if isinstance(raw, str):
+                result_text = raw
+            elif isinstance(raw, list):
+                parts = []
+                for part in raw:
+                    if hasattr(part, "text"):
+                        parts.append(part.text)
+                    elif isinstance(part, dict) and "text" in part:
+                        parts.append(part["text"])
+                parts_text = "".join(parts)
+                if parts_text:
+                    result_text = parts_text
+                else:
+                    result_text = json.dumps(raw)
+            if tool_call_id:
+                messages.append({
+                    "role": "user",
+                    "content": [{
+                        "type": "tool_result",
+                        "tool_use_id": tool_call_id,
+                        "content": result_text,
+                    }],
+                })
+            continue
+
         if role not in ("user", "assistant"):
             continue
+
         raw = getattr(msg, "content", None)
+
+        # For assistant messages, check for tool calls (AG-UI's
+        # AssistantMessage stores them in `tool_calls`, not in `content`).
+        # Anthropic requires tool_use blocks in the assistant content so
+        # the subsequent tool_result can pair with them.
+        if role == "assistant":
+            msg_tool_calls = getattr(msg, "tool_calls", None)
+            text_content = ""
+            if isinstance(raw, str):
+                text_content = raw
+            elif isinstance(raw, list):
+                for part in raw:
+                    if hasattr(part, "text"):
+                        text_content += part.text
+                    elif isinstance(part, dict) and "text" in part:
+                        text_content += part["text"]
+
+            if msg_tool_calls:
+                content_blocks: list[dict[str, Any]] = []
+                if text_content:
+                    content_blocks.append({"type": "text", "text": text_content})
+                for tc in msg_tool_calls:
+                    tc_id = getattr(tc, "id", None) or (tc.get("id") if isinstance(tc, dict) else None)
+                    func = getattr(tc, "function", None) or (tc.get("function") if isinstance(tc, dict) else None)
+                    if func:
+                        tc_name = getattr(func, "name", None) or (func.get("name") if isinstance(func, dict) else "unknown")
+                        tc_args_str = getattr(func, "arguments", None) or (func.get("arguments", "{}") if isinstance(func, dict) else "{}")
+                    else:
+                        tc_name = "unknown"
+                        tc_args_str = "{}"
+                    try:
+                        tc_args = json.loads(tc_args_str) if isinstance(tc_args_str, str) else tc_args_str
+                    except json.JSONDecodeError:
+                        tc_args = {}
+                    content_blocks.append({
+                        "type": "tool_use",
+                        "id": tc_id or "unknown",
+                        "name": tc_name,
+                        "input": tc_args,
+                    })
+                messages.append({"role": "assistant", "content": content_blocks})
+                continue
+            elif text_content:
+                messages.append({"role": "assistant", "content": text_content})
+                continue
+
         content = ""
         if isinstance(raw, str):
             content = raw
