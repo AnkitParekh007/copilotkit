@@ -84,8 +84,7 @@ export function useHumanInTheLoop<T extends Record<string, unknown>>(
 
   useFrontendTool(frontendTool, deps);
 
-  const core = copilotkit.value;
   onScopeDispose(() => {
-    core.removeHookRenderToolCall(tool.name, tool.agentId);
+    copilotkit.value.removeHookRenderToolCall(tool.name, tool.agentId);
   });
 }

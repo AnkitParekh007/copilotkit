@@ -325,9 +325,8 @@ vi.mock("@copilotkit/core", () => {
 const fetchMock = vi.fn();
 globalThis.fetch = fetchMock;
 
-const { CopilotKitCoreRuntimeConnectionStatus } = await import(
-  "@copilotkit/core"
-);
+const { CopilotKitCoreRuntimeConnectionStatus } =
+  await import("@copilotkit/core");
 
 function getMockSockets(): any[] {
   return threadMocks.sockets;
@@ -1022,9 +1021,7 @@ describe("useThreads", () => {
       ];
 
       fetchMock
-        .mockReturnValueOnce(
-          jsonResponse({ threads: mixed, joinCode: "jc-1" }),
-        )
+        .mockReturnValueOnce(jsonResponse({ threads: mixed, joinCode: "jc-1" }))
         .mockReturnValueOnce(jsonResponse({ joinToken: "jt-1" }));
 
       const { getResult } = mountHook();

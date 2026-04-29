@@ -125,7 +125,10 @@ const severityStyle = computed(() => {
   }
 });
 
-const containerStyle = computed(() => ({ ...baseStyle, ...severityStyle.value }));
+const containerStyle = computed(() => ({
+  ...baseStyle,
+  ...severityStyle.value,
+}));
 
 const instance = getCurrentInstance();
 const hasDismissListener = computed(() => {

@@ -17,7 +17,7 @@ export interface FrontendAction<T extends Parameter[] | [] = []> {
   description?: string;
   parameters?: T;
   handler?: (args: MappedParameterTypes<T>) => unknown | Promise<unknown>;
-  followUp?: boolean | string;
+  followUp?: boolean;
   available?: "disabled" | "enabled" | "remote" | "frontend";
   render?: VueFrontendTool<MappedParameterTypes<T>>["render"];
   renderAndWaitForResponse?: VueFrontendTool<MappedParameterTypes<T>>["render"];
@@ -34,7 +34,10 @@ export function useCopilotAction<const T extends Parameter[] | [] = []>(
   action: FrontendAction<T> | CatchAllFrontendAction,
   deps?: WatchSource<unknown>[],
 ): void {
-  const zodParameters = "parameters" in action ? getZodParameters(action.parameters as T) : undefined;
+  const zodParameters =
+    "parameters" in action
+      ? getZodParameters(action.parameters as T)
+      : undefined;
 
   // Catch-all render action
   if (action.name === "*") {
@@ -42,7 +45,9 @@ export function useCopilotAction<const T extends Parameter[] | [] = []>(
       {
         name: "*",
         render: (action as CatchAllFrontendAction).render,
-        ...("agentId" in action ? { agentId: (action as FrontendAction<T>).agentId } : {}),
+        ...("agentId" in action
+          ? { agentId: (action as FrontendAction<T>).agentId }
+          : {}),
       },
       deps,
     );
@@ -52,7 +57,10 @@ export function useCopilotAction<const T extends Parameter[] | [] = []>(
   const typedAction = action as FrontendAction<T>;
 
   // Human-in-the-loop: has renderAndWaitForResponse or renderAndWait
-  if ("renderAndWaitForResponse" in typedAction || "renderAndWait" in typedAction) {
+  if (
+    "renderAndWaitForResponse" in typedAction ||
+    "renderAndWait" in typedAction
+  ) {
     const render =
       typedAction.render ??
       typedAction.renderAndWaitForResponse ??
@@ -72,7 +80,10 @@ export function useCopilotAction<const T extends Parameter[] | [] = []>(
   }
 
   // Render-only: available is "frontend" or "disabled" (no handler invoked remotely)
-  if (typedAction.available === "frontend" || typedAction.available === "disabled") {
+  if (
+    typedAction.available === "frontend" ||
+    typedAction.available === "disabled"
+  ) {
     if (typedAction.render && zodParameters) {
       useRenderToolV2(
         {
@@ -88,17 +99,26 @@ export function useCopilotAction<const T extends Parameter[] | [] = []>(
   }
 
   // Default: frontend tool with handler
+  // Wrap the v1 handler (single-arg) to match v2's (args, context) => Promise<unknown> signature
+  const normalizedHandler = typedAction.handler
+    ? (args: MappedParameterTypes<T>) =>
+        Promise.resolve(typedAction.handler!(args))
+    : undefined;
+
+  // Convert v1 available (string enum) to v2 available (boolean)
+  // At this point, "frontend" and "disabled" have been handled above,
+  // so remaining values are "enabled", "remote", or undefined.
+  const normalizedAvailable: boolean | undefined =
+    typedAction.available === undefined ? undefined : true;
+
   useFrontendToolV2<MappedParameterTypes<T>>({
     name: typedAction.name,
     description: typedAction.description,
     parameters: zodParameters,
-    handler: typedAction.handler as ((args: MappedParameterTypes<T>) => unknown | Promise<unknown>) | undefined,
+    handler: normalizedHandler,
     followUp: typedAction.followUp,
     render: typedAction.render,
-    available:
-      typedAction.available === undefined
-        ? undefined
-        : typedAction.available !== "disabled",
+    available: normalizedAvailable,
     agentId: typedAction.agentId,
   });
 }

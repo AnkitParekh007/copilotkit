@@ -8,7 +8,6 @@
 
 import {
   defineComponent,
-  h,
   ref,
   onUnmounted,
   watch,
@@ -21,14 +20,14 @@ import {
   type ComponentApi,
   type InferredComponentApiSchemaType,
   type ResolveA2uiProps,
-  type SurfaceModel,
 } from "@a2ui/web_core/v0_9";
 
 /** Props passed to a Vue A2UI component's render function. */
-export interface VueA2uiComponentProps<T> {
+export interface VueA2uiComponentProps<T, S = void> {
   props: T;
   buildChild: (id: string, basePath?: string) => VNode;
   context: ComponentContext;
+  state: S;
 }
 
 /**
@@ -44,13 +43,15 @@ export interface VueComponentImplementation extends ComponentApi {
  * Creates a Vue component implementation using the GenericBinder.
  * This is the Vue equivalent of createReactComponent from the React adapter.
  */
-export function createVueComponent<Api extends ComponentApi>(
+export function createVueComponent<Api extends ComponentApi, S = void>(
   api: Api,
   renderFn: (
     componentProps: VueA2uiComponentProps<
-      ResolveA2uiProps<InferredComponentApiSchemaType<Api>>
+      ResolveA2uiProps<InferredComponentApiSchemaType<Api>>,
+      S
     >,
   ) => VNode | VNode[] | null,
+  setupState?: () => S,
 ): VueComponentImplementation {
   type Props = ResolveA2uiProps<InferredComponentApiSchemaType<Api>>;
 
@@ -62,15 +63,14 @@ export function createVueComponent<Api extends ComponentApi>(
         required: true,
       },
       buildChild: {
-        type: Function as PropType<
-          (id: string, basePath?: string) => VNode
-        >,
+        type: Function as PropType<(id: string, basePath?: string) => VNode>,
         required: true,
       },
     },
     setup(wrapperProps) {
       const resolvedProps = ref<Props>({} as Props);
       let binder: GenericBinder<Props> | null = null;
+      const state = setupState ? setupState() : (undefined as S);
 
       function initBinder(context: ComponentContext) {
         if (binder) {
@@ -104,6 +104,7 @@ export function createVueComponent<Api extends ComponentApi>(
           props: resolvedProps.value,
           buildChild: wrapperProps.buildChild,
           context: wrapperProps.context,
+          state,
         });
     },
   });
@@ -134,9 +135,7 @@ export function createBinderlessVueComponent(
         required: true,
       },
       buildChild: {
-        type: Function as PropType<
-          (id: string, basePath?: string) => VNode
-        >,
+        type: Function as PropType<(id: string, basePath?: string) => VNode>,
         required: true,
       },
     },

@@ -142,9 +142,7 @@ const autoScrollMode = computed(() => normalizeAutoScroll(props.autoScroll));
 const isPinToBottomMode = computed(
   () => autoScrollMode.value === "pin-to-bottom",
 );
-const isPinToSendMode = computed(
-  () => autoScrollMode.value === "pin-to-send",
-);
+const isPinToSendMode = computed(() => autoScrollMode.value === "pin-to-send");
 
 // `usePinToSend` is always wired but bails internally when the spacer ref
 // is null — i.e. unless `pin-to-send` mode is active and the spacer div
@@ -218,8 +216,7 @@ const hasFinishTranscribeWithAudioAction = computed(
 // attachment queue lives inside the input overlay, so its height is already
 // captured by the overlay's measured `inputContainerHeight`.
 const messagePaddingBottom = computed(
-  () =>
-    `${inputContainerHeight.value + (hasSuggestions.value ? 4 : 32)}px`,
+  () => `${inputContainerHeight.value + (hasSuggestions.value ? 4 : 32)}px`,
 );
 const showScrollToBottomButton = computed(
   () => !shouldShowWelcomeScreen.value && !isAtBottom.value,
@@ -272,20 +269,16 @@ function attachScrollContentObserver() {
   contentResizeObserver.observe(el);
 }
 
-
 // When the welcome screen disappears and the main chat view (with the input
 // overlay) appears, the template-ref elements become non-null. Re-attach
 // observers that were skipped during the initial mount.
-watch(
-  shouldShowWelcomeScreen,
-  async (show) => {
-    if (show) return;
-    await nextTick();
-    syncInputContainerHeight();
-    attachInputOverlayObserver();
-    attachScrollContentObserver();
-  },
-);
+watch(shouldShowWelcomeScreen, async (show) => {
+  if (show) return;
+  await nextTick();
+  syncInputContainerHeight();
+  attachInputOverlayObserver();
+  attachScrollContentObserver();
+});
 
 watch(
   () => props.inputValue,

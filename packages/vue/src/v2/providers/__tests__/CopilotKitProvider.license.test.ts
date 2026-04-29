@@ -81,7 +81,9 @@ describe("CopilotKitProvider license (server-driven)", () => {
 
     const view = renderProvider();
     await waitFor(() => {
-      expect(view.queryByText(/Invalid CopilotKit license token/i)).not.toBeNull();
+      expect(
+        view.queryByText(/Invalid CopilotKit license token/i),
+      ).not.toBeNull();
     });
   });
 

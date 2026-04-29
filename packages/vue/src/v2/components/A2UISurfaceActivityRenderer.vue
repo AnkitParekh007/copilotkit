@@ -1,11 +1,19 @@
 <script setup lang="ts">
-import { computed, h, onBeforeUnmount, ref, watch, type VNode } from "vue";
+import {
+  computed,
+  h,
+  onBeforeUnmount,
+  shallowRef,
+  ref,
+  watch,
+  type VNode,
+} from "vue";
 import type { ActivityMessage } from "@ag-ui/core";
 import type { A2UITheme } from "../types";
 import type { A2UIOperation } from "./a2ui";
 import { getOperationSurfaceId } from "./a2ui";
 import { useCopilotKit } from "../providers";
-import { MessageProcessor } from "@a2ui/web_core/v0_9";
+import { MessageProcessor, type SurfaceModel } from "@a2ui/web_core/v0_9";
 import {
   vueBasicCatalog,
   A2uiSurface,
@@ -26,9 +34,9 @@ const props = defineProps<{
 const { copilotkit } = useCopilotKit();
 
 // MessageProcessor from @a2ui/web_core — framework-agnostic
-const processorRef = ref<MessageProcessor<VueComponentImplementation> | null>(
-  null,
-);
+// Use shallowRef to avoid Vue's deep UnwrapRef which strips private class members
+const processorRef =
+  shallowRef<MessageProcessor<VueComponentImplementation> | null>(null);
 // Version counter to trigger Vue reactivity on processor state changes
 const version = ref(0);
 // Error state
@@ -123,9 +131,7 @@ const surfaceEntries = computed(() => {
 
   const entries: Array<{
     surfaceId: string;
-    surface: ReturnType<
-      typeof processorRef.value.model.getSurface
-    >;
+    surface: SurfaceModel<VueComponentImplementation>;
   }> = [];
 
   // Group operations by surface to know which surfaces we expect

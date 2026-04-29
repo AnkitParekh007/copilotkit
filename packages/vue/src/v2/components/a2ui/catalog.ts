@@ -5,7 +5,7 @@
  * mirroring the React renderer's catalog/basic/.
  */
 
-import { h, ref, type VNode } from "vue";
+import { h, ref, type CSSProperties, type VNode } from "vue";
 import { Catalog } from "@a2ui/web_core/v0_9";
 import {
   TextApi,
@@ -103,9 +103,9 @@ const Image = createVueComponent(ImageApi, ({ props }) => {
     return fit || "fill";
   };
 
-  const style: Record<string, string> = {
+  const style: CSSProperties = {
     ...getBaseLeafStyle(),
-    objectFit: mapFit(props.fit),
+    objectFit: mapFit(props.fit) as CSSProperties["objectFit"],
     width: "100%",
     height: "auto",
     display: "block",
@@ -244,71 +244,77 @@ const Card = createVueComponent(CardApi, ({ props, buildChild }) => {
     width: "100%",
   };
 
-  return h("div", { style }, [
-    props.child ? buildChild(props.child) : null,
-  ]);
+  return h("div", { style }, [props.child ? buildChild(props.child) : null]);
 });
 
-const Tabs = createVueComponent(TabsApi, ({ props, buildChild }) => {
-  const selectedIndex = ref(0);
-  const tabs = props.tabs || [];
+const Tabs = createVueComponent(
+  TabsApi,
+  ({ props, buildChild, state }) => {
+    const tabs = props.tabs || [];
 
-  return h(
-    "div",
-    {
-      style: {
-        display: "flex",
-        flexDirection: "column",
-        width: "100%",
-        margin: LEAF_MARGIN,
-      },
-    },
-    [
-      h(
-        "div",
-        {
-          style: {
-            display: "flex",
-            borderBottom: "1px solid #ccc",
-            marginBottom: "8px",
-          },
+    return h(
+      "div",
+      {
+        style: {
+          display: "flex",
+          flexDirection: "column",
+          width: "100%",
+          margin: LEAF_MARGIN,
         },
-        tabs.map((tab: { title?: string; child?: string }, i: number) =>
-          h(
-            "button",
-            {
-              key: i,
-              onClick: () => {
-                selectedIndex.value = i;
-              },
-              style: {
-                padding: "8px 16px",
-                border: "none",
-                background: "none",
-                borderBottom:
-                  selectedIndex.value === i
-                    ? "2px solid var(--a2ui-primary-color, #007bff)"
-                    : "none",
-                fontWeight: selectedIndex.value === i ? "bold" : "normal",
-                cursor: "pointer",
-                color:
-                  selectedIndex.value === i
-                    ? "var(--a2ui-primary-color, #007bff)"
-                    : "inherit",
-              },
+      },
+      [
+        h(
+          "div",
+          {
+            style: {
+              display: "flex",
+              borderBottom: "1px solid #ccc",
+              marginBottom: "8px",
             },
-            tab.title,
-          ),
+          },
+          tabs.map((tab, i: number) => {
+            const title =
+              typeof tab.title === "string"
+                ? tab.title
+                : String(tab.title ?? "");
+            return h(
+              "button",
+              {
+                key: i,
+                onClick: () => {
+                  state.selectedIndex.value = i;
+                },
+                style: {
+                  padding: "8px 16px",
+                  border: "none",
+                  background: "none",
+                  borderBottom:
+                    state.selectedIndex.value === i
+                      ? "2px solid var(--a2ui-primary-color, #007bff)"
+                      : "none",
+                  fontWeight:
+                    state.selectedIndex.value === i ? "bold" : "normal",
+                  cursor: "pointer",
+                  color:
+                    state.selectedIndex.value === i
+                      ? "var(--a2ui-primary-color, #007bff)"
+                      : "inherit",
+                },
+              },
+              title,
+            );
+          }),
         ),
-      ),
-      h("div", { style: { flex: "1" } }, [
-        tabs[selectedIndex.value]?.child
-          ? buildChild(tabs[selectedIndex.value].child)
-          : null,
-      ]),
-    ],
-  );
-});
+        h("div", { style: { flex: "1" } }, [
+          tabs[state.selectedIndex.value]?.child
+            ? buildChild(tabs[state.selectedIndex.value]!.child)
+            : null,
+        ]),
+      ],
+    );
+  },
+  () => ({ selectedIndex: ref(0) }),
+);
 
 const Divider = createVueComponent(DividerApi, ({ props }) => {
   const isVertical = props.axis === "vertical";
@@ -329,89 +335,91 @@ const Divider = createVueComponent(DividerApi, ({ props }) => {
   return h("div", { style });
 });
 
-const Modal = createVueComponent(ModalApi, ({ props, buildChild }) => {
-  const isOpen = ref(false);
-
-  return h("div", {}, [
-    h(
-      "div",
-      {
-        onClick: () => {
-          isOpen.value = true;
-        },
-        style: { display: "inline-block" },
-      },
-      [props.trigger ? buildChild(props.trigger) : null],
-    ),
-    isOpen.value
-      ? h(
-          "div",
-          {
-            style: {
-              position: "fixed",
-              top: "0",
-              left: "0",
-              right: "0",
-              bottom: "0",
-              backgroundColor: "rgba(0,0,0,0.5)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              zIndex: "1000",
-            },
-            onClick: () => {
-              isOpen.value = false;
-            },
+const Modal = createVueComponent(
+  ModalApi,
+  ({ props, buildChild, state }) => {
+    return h("div", {}, [
+      h(
+        "div",
+        {
+          onClick: () => {
+            state.isOpen.value = true;
           },
-          [
-            h(
-              "div",
-              {
-                style: {
-                  backgroundColor: "#fff",
-                  padding: "24px",
-                  borderRadius: "8px",
-                  maxWidth: "90%",
-                  maxHeight: "90%",
-                  overflow: "auto",
-                  display: "flex",
-                  flexDirection: "column",
-                },
-                onClick: (e: Event) => e.stopPropagation(),
+          style: { display: "inline-block" },
+        },
+        [props.trigger ? buildChild(props.trigger) : null],
+      ),
+      state.isOpen.value
+        ? h(
+            "div",
+            {
+              style: {
+                position: "fixed",
+                top: "0",
+                left: "0",
+                right: "0",
+                bottom: "0",
+                backgroundColor: "rgba(0,0,0,0.5)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                zIndex: "1000",
               },
-              [
-                h(
-                  "div",
-                  { style: { display: "flex", justifyContent: "flex-end" } },
-                  [
-                    h(
-                      "button",
-                      {
-                        onClick: () => {
-                          isOpen.value = false;
+              onClick: () => {
+                state.isOpen.value = false;
+              },
+            },
+            [
+              h(
+                "div",
+                {
+                  style: {
+                    backgroundColor: "#fff",
+                    padding: "24px",
+                    borderRadius: "8px",
+                    maxWidth: "90%",
+                    maxHeight: "90%",
+                    overflow: "auto",
+                    display: "flex",
+                    flexDirection: "column",
+                  },
+                  onClick: (e: Event) => e.stopPropagation(),
+                },
+                [
+                  h(
+                    "div",
+                    { style: { display: "flex", justifyContent: "flex-end" } },
+                    [
+                      h(
+                        "button",
+                        {
+                          onClick: () => {
+                            state.isOpen.value = false;
+                          },
+                          style: {
+                            border: "none",
+                            background: "none",
+                            fontSize: "20px",
+                            cursor: "pointer",
+                            padding: "4px",
+                          },
                         },
-                        style: {
-                          border: "none",
-                          background: "none",
-                          fontSize: "20px",
-                          cursor: "pointer",
-                          padding: "4px",
-                        },
-                      },
-                      "\u00D7",
-                    ),
-                  ],
-                ),
-                h("div", { style: { flex: "1" } }, [
-                  props.content ? buildChild(props.content) : null,
-                ]),
-              ],
-            ),
-          ],
-        )
-      : null,
-  ]);
-});
+                        "\u00D7",
+                      ),
+                    ],
+                  ),
+                  h("div", { style: { flex: "1" } }, [
+                    props.content ? buildChild(props.content) : null,
+                  ]),
+                ],
+              ),
+            ],
+          )
+        : null,
+    ]);
+  },
+  () => ({ isOpen: ref(false) }),
+);
 
 const Button = createVueComponent(ButtonApi, ({ props, buildChild }) => {
   const style = {
@@ -568,8 +576,7 @@ const CheckBox = createVueComponent(CheckBoxApi, ({ props }) => {
 
 const ChoicePicker = createVueComponent(
   ChoicePickerApi,
-  ({ props, context }) => {
-    const filter = ref("");
+  ({ props, context, state }) => {
     const values = Array.isArray(props.value) ? props.value : [];
     const isMutuallyExclusive = props.variant === "mutuallyExclusive";
 
@@ -584,12 +591,17 @@ const ChoicePicker = createVueComponent(
       }
     };
 
-    type ChoiceOption = { label?: string; value: string };
+    type ChoiceOption = {
+      label?: string | Record<string, unknown>;
+      value: string;
+    };
     const options = (props.options || []).filter(
       (opt: ChoiceOption) =>
         !props.filterable ||
-        filter.value === "" ||
-        String(opt.label).toLowerCase().includes(filter.value.toLowerCase()),
+        state.filter.value === "" ||
+        String(typeof opt.label === "string" ? opt.label : "")
+          .toLowerCase()
+          .includes(state.filter.value.toLowerCase()),
     );
 
     return h(
@@ -611,9 +623,9 @@ const ChoicePicker = createVueComponent(
           ? h("input", {
               type: "text",
               placeholder: "Filter options...",
-              value: filter.value,
+              value: state.filter.value,
               onInput: (e: Event) => {
-                filter.value = (e.target as HTMLInputElement).value;
+                state.filter.value = (e.target as HTMLInputElement).value;
               },
               style: {
                 padding: "4px 8px",
@@ -627,14 +639,17 @@ const ChoicePicker = createVueComponent(
           {
             style: {
               display: "flex",
-              flexDirection:
-                props.displayStyle === "chips" ? "row" : "column",
+              flexDirection: props.displayStyle === "chips" ? "row" : "column",
               flexWrap: props.displayStyle === "chips" ? "wrap" : "nowrap",
               gap: "8px",
             },
           },
           options.map((opt: ChoiceOption, i: number) => {
             const isSelected = values.includes(opt.value);
+            const label =
+              typeof opt.label === "string"
+                ? opt.label
+                : String(opt.label ?? opt.value);
             if (props.displayStyle === "chips") {
               return h(
                 "button",
@@ -655,7 +670,7 @@ const ChoicePicker = createVueComponent(
                     fontSize: "12px",
                   },
                 },
-                opt.label,
+                label,
               );
             }
             return h(
@@ -678,7 +693,7 @@ const ChoicePicker = createVueComponent(
                     ? `choice-${context.componentModel.id}`
                     : undefined,
                 }),
-                h("span", { style: { fontSize: "14px" } }, opt.label),
+                h("span", { style: { fontSize: "14px" } }, label),
               ],
             );
           }),
@@ -686,6 +701,7 @@ const ChoicePicker = createVueComponent(
       ],
     );
   },
+  () => ({ filter: ref("") }),
 );
 
 const Slider = createVueComponent(SliderApi, ({ props }) => {

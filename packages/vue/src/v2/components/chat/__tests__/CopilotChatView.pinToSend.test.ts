@@ -15,7 +15,8 @@ import {
 // React suite — Vue uses `provide()` for `LastUserMessageContext` parity.
 
 beforeEach(() => {
-  HTMLElement.prototype.scrollTo = vi.fn() as unknown as typeof Element.prototype.scrollTo;
+  HTMLElement.prototype.scrollTo =
+    vi.fn() as unknown as typeof Element.prototype.scrollTo;
 });
 
 afterEach(() => {
@@ -52,16 +53,12 @@ function renderView(
               { threadId: "test-thread" },
               {
                 default: () =>
-                  h(
-                    "div",
-                    { style: { height: "400px" } },
-                    [
-                      h(CopilotChatView, {
-                        autoScroll,
-                        messages: sampleMessages,
-                      }),
-                    ],
-                  ),
+                  h("div", { style: { height: "400px" } }, [
+                    h(CopilotChatView, {
+                      autoScroll,
+                      messages: sampleMessages,
+                    }),
+                  ]),
               },
             ),
         });
@@ -137,16 +134,12 @@ describe("CopilotChatView pin-to-send mode", () => {
                 { threadId: "test-thread" },
                 {
                   default: () =>
-                    h(
-                      "div",
-                      { style: { height: "400px" } },
-                      [
-                        h(CopilotChatView, {
-                          autoScroll: "pin-to-send",
-                          messages: sampleMessages,
-                        }),
-                      ],
-                    ),
+                    h("div", { style: { height: "400px" } }, [
+                      h(CopilotChatView, {
+                        autoScroll: "pin-to-send",
+                        messages: sampleMessages,
+                      }),
+                    ]),
                 },
               ),
           });

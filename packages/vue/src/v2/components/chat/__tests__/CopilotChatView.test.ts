@@ -87,9 +87,9 @@ describe("CopilotChatView", () => {
     expect(
       wrapper.find("[data-testid='copilot-chat-view-welcome-screen']").exists(),
     ).toBe(false);
-    expect(
-      wrapper.find("[data-testid='copilot-input-overlay']").exists(),
-    ).toBe(true);
+    expect(wrapper.find("[data-testid='copilot-input-overlay']").exists()).toBe(
+      true,
+    );
   });
 
   it("renders messages and forwards input change/submit events", async () => {

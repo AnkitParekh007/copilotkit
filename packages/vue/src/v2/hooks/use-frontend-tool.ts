@@ -27,7 +27,6 @@ export function useFrontendTool<T extends Record<string, unknown>>(
 ) {
   const { copilotkit } = useCopilotKit();
   const extraDeps = deps ?? EMPTY_DEPS;
-  const core = copilotkit.value;
 
   watch(
     [
@@ -37,6 +36,7 @@ export function useFrontendTool<T extends Record<string, unknown>>(
       ...extraDeps,
     ],
     (_newValues, _old, onCleanup) => {
+      const core = copilotkit.value;
       const name = tool.name;
 
       if (core.getTool({ toolName: name, agentId: tool.agentId })) {

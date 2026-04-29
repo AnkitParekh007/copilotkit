@@ -46,10 +46,16 @@ export function useCopilotReadable(
 
       const { description, value, convert, available } = options;
 
+      // Serialize value once, using custom convert if provided
+      const serializedValue = convert
+        ? convert(description, value)
+        : JSON.stringify(value);
+
       // Check if context already exists with same data
-      const found = Object.entries(core.context).find(([_id, ctxItem]) => {
+      const found = Object.entries(core.context).find(([, ctxItem]) => {
         return (
-          JSON.stringify({ description, value }) === JSON.stringify(ctxItem)
+          ctxItem.description === description &&
+          ctxItem.value === serializedValue
         );
       });
 
@@ -62,7 +68,7 @@ export function useCopilotReadable(
 
       ctxIdRef.value = core.addContext({
         description,
-        value: (convert ?? JSON.stringify)(value),
+        value: serializedValue,
       });
 
       onCleanup(() => {

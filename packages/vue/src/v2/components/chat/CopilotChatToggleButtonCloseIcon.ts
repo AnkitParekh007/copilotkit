@@ -9,7 +9,7 @@ export default defineComponent({
       const { class: className, ...rest } = attrs as Record<string, unknown>;
       return h(IconX, {
         ...rest,
-        class: ["h-6 w-6", className],
+        class: ["cpk:h-6 cpk:w-6", className],
         strokeWidth: 1.75,
       });
     };

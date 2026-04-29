@@ -24,7 +24,7 @@ function renderInput(props: Record<string, unknown>) {
 }
 
 describe("CopilotChatInput bottom-anchored offset", () => {
-  it("reserves padding-bottom for the license banner when positioning=\"absolute\"", () => {
+  it('reserves padding-bottom for the license banner when positioning="absolute"', () => {
     renderInput({ modelValue: "", positioning: "absolute" });
     const container = screen.getByTestId(
       "copilot-chat-input-container",
@@ -32,7 +32,7 @@ describe("CopilotChatInput bottom-anchored offset", () => {
     expect(container.style.paddingBottom).toBe(PADDING_VAR);
   });
 
-  it("reserves padding-bottom for the license banner when bottomAnchored=true (positioning=\"static\")", () => {
+  it('reserves padding-bottom for the license banner when bottomAnchored=true (positioning="static")', () => {
     renderInput({
       modelValue: "",
       positioning: "static",

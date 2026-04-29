@@ -57,41 +57,33 @@ const HarnessInner = defineComponent({
     });
 
     return () =>
-      h(
-        "div",
-        { ref: scrollRef, "data-testid": "scroll" },
-        [
+      h("div", { ref: scrollRef, "data-testid": "scroll" }, [
+        h("div", { ref: contentRef, "data-testid": "content" }, [
           h(
             "div",
-            { ref: contentRef, "data-testid": "content" },
-            [
-              h(
-                "div",
-                { "data-message-id": "m1", "data-role": "user" },
-                "user msg 1",
-              ),
-              h(
-                "div",
-                {
-                  "data-message-id": "m2",
-                  "data-role": "assistant",
-                },
-                "asst msg 1",
-              ),
-              h(
-                "div",
-                { "data-message-id": "m3", "data-role": "user" },
-                "user msg 2",
-              ),
-            ],
+            { "data-message-id": "m1", "data-role": "user" },
+            "user msg 1",
           ),
-          h("div", {
-            ref: spacerRef,
-            "data-testid": "spacer",
-            style: { height: "0px" },
-          }),
-        ],
-      );
+          h(
+            "div",
+            {
+              "data-message-id": "m2",
+              "data-role": "assistant",
+            },
+            "asst msg 1",
+          ),
+          h(
+            "div",
+            { "data-message-id": "m3", "data-role": "user" },
+            "user msg 2",
+          ),
+        ]),
+        h("div", {
+          ref: spacerRef,
+          "data-testid": "spacer",
+          style: { height: "0px" },
+        }),
+      ]);
   },
 });
 
@@ -117,7 +109,8 @@ function mountHarness(initial: LastUserMessageState, topOffset = 16) {
 }
 
 beforeEach(() => {
-  HTMLElement.prototype.scrollTo = vi.fn() as unknown as typeof Element.prototype.scrollTo;
+  HTMLElement.prototype.scrollTo =
+    vi.fn() as unknown as typeof Element.prototype.scrollTo;
   // jsdom does not run rAF callbacks — stub it to fire synchronously so scroll
   // assertions work (mirrors React harness setup).
   vi.stubGlobal("requestAnimationFrame", (cb: FrameRequestCallback) => {

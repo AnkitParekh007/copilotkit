@@ -101,8 +101,7 @@ export function usePinToSend({
       // trailing copy button).
       const viewportHeight = scrollEl.clientHeight;
       const userMessageHeight = targetEl.getBoundingClientRect().height;
-      const paddingTop =
-        parseFloat(getComputedStyle(targetEl).paddingTop) || 0;
+      const paddingTop = parseFloat(getComputedStyle(targetEl).paddingTop) || 0;
       const bubbleHeight = Math.max(0, userMessageHeight - paddingTop);
       const spacerHeight = Math.max(
         0,

@@ -9,7 +9,7 @@ This file defines contributor workflow for keeping `@copilotkit/vue` aligned wit
 
 ## Parity source of truth
 
-- React remains the canonical behavioral reference: `packages/v2/react/**`.
+- React remains the canonical behavioral reference: `packages/react-core/`, `packages/react-ui/`, and `packages/react-textarea/`.
 - Use [PARITY.md](./PARITY.md) as the canonical Vue-side parity policy, architectural translation guide, strict test-port rulebook, and living React-to-Vue implementation/test matrix.
 - Keep [README.md](./README.md) focused on user-facing package documentation.
 

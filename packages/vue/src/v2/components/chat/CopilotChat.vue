@@ -304,11 +304,7 @@ watch(
     resolvedThreadId,
     hasExplicitThreadId,
   ],
-  (
-    [mounted, core, currentAgent, threadId, isExplicit],
-    _old,
-    onCleanup,
-  ) => {
+  ([mounted, core, currentAgent, threadId, isExplicit], _old, onCleanup) => {
     if (!mounted) {
       return;
     }

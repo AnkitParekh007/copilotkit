@@ -18,7 +18,7 @@ export interface UseFrontendToolArgs<T extends Parameter[] | [] = []> {
   description?: string;
   parameters?: T;
   handler?: (args: MappedParameterTypes<T>) => unknown | Promise<unknown>;
-  followUp?: boolean | string;
+  followUp?: boolean;
   available?: "disabled" | "enabled";
   render?: VueFrontendTool<MappedParameterTypes<T>>["render"];
   agentId?: string;
@@ -28,17 +28,34 @@ export function useFrontendTool<const T extends Parameter[] = []>(
   tool: UseFrontendToolArgs<T>,
   deps?: WatchSource<unknown>[],
 ) {
-  const { name, description, parameters, handler, followUp, available, render, agentId } = tool;
-  const zodParameters = getZodParameters(parameters);
-
-  useFrontendToolV2<MappedParameterTypes<T>>({
+  const {
     name,
     description,
-    parameters: zodParameters,
-    handler: handler as ((args: MappedParameterTypes<T>) => unknown | Promise<unknown>) | undefined,
+    parameters,
+    handler,
     followUp,
+    available,
     render,
-    available: available === undefined ? undefined : available !== "disabled",
     agentId,
-  });
+  } = tool;
+  const zodParameters = getZodParameters(parameters);
+
+  // Wrap the v1 handler (single-arg) to match v2's (args, context) => Promise<unknown> signature
+  const normalizedHandler = handler
+    ? (args: MappedParameterTypes<T>) => Promise.resolve(handler(args))
+    : undefined;
+
+  useFrontendToolV2<MappedParameterTypes<T>>(
+    {
+      name,
+      description,
+      parameters: zodParameters,
+      handler: normalizedHandler,
+      followUp,
+      render,
+      available: available === undefined ? undefined : available !== "disabled",
+      agentId,
+    },
+    deps,
+  );
 }

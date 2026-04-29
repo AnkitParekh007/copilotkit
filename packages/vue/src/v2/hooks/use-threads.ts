@@ -136,15 +136,7 @@ export function useThreads(input: UseThreadsInput): UseThreadsResult {
       resolvedIncludeArchived,
       resolvedLimit,
     ],
-    ([
-      runtimeUrl,
-      runtimeStatus,
-      ,
-      wsUrl,
-      agentId,
-      includeArchived,
-      limit,
-    ]) => {
+    ([runtimeUrl, runtimeStatus, , wsUrl, agentId, includeArchived, limit]) => {
       if (!runtimeUrl) {
         store.setContext(null);
         return;

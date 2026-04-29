@@ -503,10 +503,7 @@ describe("CopilotChat", () => {
     // a silent no-op.
     const agent = new StateCapturingAgent();
 
-    mountChat(
-      { threadId: "explicit-thread" },
-      { agents: { default: agent } },
-    );
+    mountChat({ threadId: "explicit-thread" }, { agents: { default: agent } });
     await flushPromises();
 
     expect(agent.threadId).toBeDefined();
@@ -522,10 +519,7 @@ describe("CopilotChat", () => {
         "connectAgent",
       );
 
-      mountChat(
-        { welcomeScreen: false },
-        { agents: { default: agent } },
-      );
+      mountChat({ welcomeScreen: false }, { agents: { default: agent } });
       await flushPromises();
 
       expect(connectAgent).not.toHaveBeenCalled();
@@ -605,14 +599,13 @@ describe("CopilotChat", () => {
       // connect promise settles. The raf defer is handled in jsdom because
       // requestAnimationFrame is polyfilled by the environment.
       const agent = new StateCapturingAgent();
-      vi.spyOn(
-        CopilotKitCoreVue.prototype,
-        "connectAgent",
-      ).mockImplementation(async () => {
-        return { newMessages: [] } as Awaited<
-          ReturnType<CopilotKitCoreVue["connectAgent"]>
-        >;
-      });
+      vi.spyOn(CopilotKitCoreVue.prototype, "connectAgent").mockImplementation(
+        async () => {
+          return { newMessages: [] } as Awaited<
+            ReturnType<CopilotKitCoreVue["connectAgent"]>
+          >;
+        },
+      );
 
       const observed: Array<boolean | undefined> = [];
 

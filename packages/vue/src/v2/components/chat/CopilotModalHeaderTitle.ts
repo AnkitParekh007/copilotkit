@@ -11,7 +11,7 @@ export default defineComponent({
         {
           ...rest,
           class: [
-            "w-full text-base font-medium leading-none tracking-tight text-foreground",
+            "cpk:w-full cpk:text-base cpk:font-medium cpk:leading-none cpk:tracking-tight cpk:text-foreground",
             className,
           ],
         },
