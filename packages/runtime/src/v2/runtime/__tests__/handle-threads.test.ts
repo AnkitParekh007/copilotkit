@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import type { BaseEvent, Message } from "@ag-ui/client";
 
 import {
   handleArchiveThread,
@@ -425,10 +426,11 @@ describe("thread handlers", () => {
   describe("handleGetThreadMessages", () => {
     it("returns messages from the in-memory runner for a known thread", async () => {
       const runner = new InMemoryAgentRunner();
-      vi.spyOn(runner, "getThreadMessages").mockReturnValue([
-        { id: "m1", role: "user", content: "hello" } as never,
-        { id: "m2", role: "assistant", content: "hi there" } as never,
-      ]);
+      const messages: Message[] = [
+        { id: "m1", role: "user", content: "hello" },
+        { id: "m2", role: "assistant", content: "hi there" },
+      ];
+      vi.spyOn(runner, "getThreadMessages").mockReturnValue(messages);
       const runtime = new CopilotRuntime({ agents: {}, runner });
 
       const response = await handleGetThreadMessages({
@@ -640,15 +642,18 @@ describe("thread handlers", () => {
   describe("handleGetThreadEvents", () => {
     it("returns events from the in-memory runner for a known thread", async () => {
       const runner = new InMemoryAgentRunner();
-      const fakeEvents = [
-        { type: "RUN_STARTED", runId: "r1", threadId: "thread-1" },
+      // BaseEvent is a discriminated union of many event shapes; the handler
+      // only forwards them as opaque JSON payloads, so a minimal cast to the
+      // union root is the narrowest accurate type for the mock.
+      const fakeEvents: BaseEvent[] = [
+        { type: "RUN_STARTED", runId: "r1", threadId: "thread-1" } as BaseEvent,
         {
           type: "TEXT_MESSAGE_START",
           messageId: "m1",
           role: "assistant",
-        },
+        } as BaseEvent,
       ];
-      vi.spyOn(runner, "getThreadEvents").mockReturnValue(fakeEvents as never);
+      vi.spyOn(runner, "getThreadEvents").mockReturnValue(fakeEvents);
       const runtime = new CopilotRuntime({ agents: {}, runner });
 
       const response = await handleGetThreadEvents({
@@ -690,12 +695,12 @@ describe("thread handlers", () => {
       expect(response.status).toBe(501);
     });
 
-    it("returns 500 when the runner throws", async () => {
-      const runner = new InMemoryAgentRunner();
-      vi.spyOn(runner, "getThreadEvents").mockImplementation(() => {
-        throw new Error("boom");
-      });
-      const runtime = new CopilotRuntime({ agents: {}, runner });
+    it("returns 422 when neither in-memory nor intelligence is configured", async () => {
+      // createIntelligenceRuntime stubs the runner with a plain object that is
+      // not an InMemoryAgentRunner instance. Passing intelligence: undefined
+      // also makes isIntelligenceRuntime() return false, so the handler should
+      // hit the explicit 422 fallback at the end of handleGetThreadEvents.
+      const runtime = createIntelligenceRuntime({ intelligence: undefined });
 
       const response = await handleGetThreadEvents({
         runtime,
@@ -703,15 +708,47 @@ describe("thread handlers", () => {
         threadId: "thread-1",
       });
 
-      expect(response.status).toBe(500);
+      expect(response.status).toBe(422);
+      const body = await response.json();
+      expect(body).toHaveProperty("error");
+    });
+
+    it("returns 500 when the runner throws and does not leak the inner error message", async () => {
+      const runner = new InMemoryAgentRunner();
+      const innerMessage = "boom: secret connection details";
+      vi.spyOn(runner, "getThreadEvents").mockImplementation(() => {
+        throw new Error(innerMessage);
+      });
+      const runtime = new CopilotRuntime({ agents: {}, runner });
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+      try {
+        const response = await handleGetThreadEvents({
+          runtime,
+          request: new Request("https://example.com/threads/thread-1/events"),
+          threadId: "thread-1",
+        });
+
+        expect(response.status).toBe(500);
+        const body = (await response.json()) as Record<string, unknown>;
+        // The handler returns its sanitized error string, never the
+        // raw thrown message — assert both directions to catch a regression
+        // in either the response shape or the logging.
+        expect(body.error).toBe("Failed to fetch thread events");
+        const serialized = JSON.stringify(body);
+        expect(serialized).not.toContain(innerMessage);
+        expect(serialized).not.toContain("secret connection details");
+      } finally {
+        errorSpy.mockRestore();
+      }
     });
   });
 
   describe("handleGetThreadState", () => {
     it("returns the state from the in-memory runner", async () => {
       const runner = new InMemoryAgentRunner();
-      const snapshot = { counter: 3, label: "alpha" };
-      vi.spyOn(runner, "getThreadState").mockReturnValue(snapshot as never);
+      const snapshot: Record<string, unknown> = { counter: 3, label: "alpha" };
+      vi.spyOn(runner, "getThreadState").mockReturnValue(snapshot);
       const runtime = new CopilotRuntime({ agents: {}, runner });
 
       const response = await handleGetThreadState({
@@ -752,12 +789,8 @@ describe("thread handlers", () => {
       expect(response.status).toBe(501);
     });
 
-    it("returns 500 when the runner throws", async () => {
-      const runner = new InMemoryAgentRunner();
-      vi.spyOn(runner, "getThreadState").mockImplementation(() => {
-        throw new Error("boom");
-      });
-      const runtime = new CopilotRuntime({ agents: {}, runner });
+    it("returns 422 when neither in-memory nor intelligence is configured", async () => {
+      const runtime = createIntelligenceRuntime({ intelligence: undefined });
 
       const response = await handleGetThreadState({
         runtime,
@@ -765,7 +798,36 @@ describe("thread handlers", () => {
         threadId: "thread-1",
       });
 
-      expect(response.status).toBe(500);
+      expect(response.status).toBe(422);
+      const body = await response.json();
+      expect(body).toHaveProperty("error");
+    });
+
+    it("returns 500 when the runner throws and does not leak the inner error message", async () => {
+      const runner = new InMemoryAgentRunner();
+      const innerMessage = "boom: leaked DB password";
+      vi.spyOn(runner, "getThreadState").mockImplementation(() => {
+        throw new Error(innerMessage);
+      });
+      const runtime = new CopilotRuntime({ agents: {}, runner });
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+      try {
+        const response = await handleGetThreadState({
+          runtime,
+          request: new Request("https://example.com/threads/thread-1/state"),
+          threadId: "thread-1",
+        });
+
+        expect(response.status).toBe(500);
+        const body = (await response.json()) as Record<string, unknown>;
+        expect(body.error).toBe("Failed to fetch thread state");
+        const serialized = JSON.stringify(body);
+        expect(serialized).not.toContain(innerMessage);
+        expect(serialized).not.toContain("leaked DB password");
+      } finally {
+        errorSpy.mockRestore();
+      }
     });
   });
 });

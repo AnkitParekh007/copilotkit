@@ -90,6 +90,123 @@ describe("fetch-router", () => {
       });
     });
 
+    describe("threads/:threadId/events", () => {
+      it("matches GET /threads/:threadId/events with simple id", () => {
+        const result = matchRoute(
+          "/api/copilotkit/threads/abc-123/events",
+          basePath,
+        );
+        expect(result).toEqual({
+          method: "threads/events",
+          threadId: "abc-123",
+        });
+      });
+
+      it("matches with a UUID-style threadId", () => {
+        const result = matchRoute(
+          "/api/copilotkit/threads/3f5b9e88-1d2a-4c5e-90f6-2c9bbb3f1234/events",
+          basePath,
+        );
+        expect(result).toEqual({
+          method: "threads/events",
+          threadId: "3f5b9e88-1d2a-4c5e-90f6-2c9bbb3f1234",
+        });
+      });
+
+      it("decodes a URL-encoded threadId", () => {
+        const result = matchRoute(
+          "/api/copilotkit/threads/thread%2F123/events",
+          basePath,
+        );
+        expect(result).toEqual({
+          method: "threads/events",
+          threadId: "thread/123",
+        });
+      });
+
+      it("does not match the events route for /threads//events (empty threadId segment)", () => {
+        // The empty segment is filtered out by split("/").filter(Boolean), so
+        // the path collapses to /threads/events — only 2 segments. That fails
+        // the 3-segment events pattern but does match the 2-segment
+        // /threads/:threadId update pattern with threadId="events". The
+        // method-validation layer in fetch-handler.ts would then reject a GET
+        // request because "threads/update" only accepts PATCH/DELETE. The
+        // router-level invariant we care about here is that the events
+        // handler is NOT selected for this malformed URL.
+        const result = matchRoute(
+          "/api/copilotkit/threads//events",
+          basePath,
+        );
+        expect(result?.method).not.toBe("threads/events");
+      });
+
+      it("does not match the events route for /threads/foo/events/extra (extra trailing segment)", () => {
+        // Suffix matching only inspects the trailing segments. /…/events/extra
+        // ends in `extra`, not `events`, so the events pattern cannot match
+        // and we expect either a different match or null — never threads/events.
+        const result = matchRoute(
+          "/api/copilotkit/threads/foo/events/extra",
+          basePath,
+        );
+        expect(result?.method).not.toBe("threads/events");
+      });
+    });
+
+    describe("threads/:threadId/state", () => {
+      it("matches GET /threads/:threadId/state with simple id", () => {
+        const result = matchRoute(
+          "/api/copilotkit/threads/abc-123/state",
+          basePath,
+        );
+        expect(result).toEqual({
+          method: "threads/state",
+          threadId: "abc-123",
+        });
+      });
+
+      it("matches with a UUID-style threadId", () => {
+        const result = matchRoute(
+          "/api/copilotkit/threads/3f5b9e88-1d2a-4c5e-90f6-2c9bbb3f1234/state",
+          basePath,
+        );
+        expect(result).toEqual({
+          method: "threads/state",
+          threadId: "3f5b9e88-1d2a-4c5e-90f6-2c9bbb3f1234",
+        });
+      });
+
+      it("decodes a URL-encoded threadId", () => {
+        const result = matchRoute(
+          "/api/copilotkit/threads/thread%2F123/state",
+          basePath,
+        );
+        expect(result).toEqual({
+          method: "threads/state",
+          threadId: "thread/123",
+        });
+      });
+
+      it("does not match the state route for /threads//state (empty threadId segment)", () => {
+        // See the events parallel above: the empty segment is filtered out
+        // before pattern matching, so this falls back to the
+        // /threads/:threadId update pattern. We assert only that the state
+        // handler is NOT selected for the malformed URL.
+        const result = matchRoute(
+          "/api/copilotkit/threads//state",
+          basePath,
+        );
+        expect(result?.method).not.toBe("threads/state");
+      });
+
+      it("does not match the state route for /threads/foo/state/extra (extra trailing segment)", () => {
+        const result = matchRoute(
+          "/api/copilotkit/threads/foo/state/extra",
+          basePath,
+        );
+        expect(result?.method).not.toBe("threads/state");
+      });
+    });
+
     it("handles URL-encoded threadId in thread routes", () => {
       const result = matchRoute(
         "/api/copilotkit/threads/thread%2F123",
@@ -203,6 +320,16 @@ describe("fetch-router", () => {
     it("matches /threads/:threadId/messages suffix", () => {
       const result = matchRoute("/anything/threads/t1/messages");
       expect(result).toEqual({ method: "threads/messages", threadId: "t1" });
+    });
+
+    it("matches /threads/:threadId/events suffix", () => {
+      const result = matchRoute("/anything/threads/t1/events");
+      expect(result).toEqual({ method: "threads/events", threadId: "t1" });
+    });
+
+    it("matches /threads/:threadId/state suffix", () => {
+      const result = matchRoute("/anything/threads/t1/state");
+      expect(result).toEqual({ method: "threads/state", threadId: "t1" });
     });
 
     it("works with deeply nested mount prefix", () => {
