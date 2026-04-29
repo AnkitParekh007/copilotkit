@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { ThreadStoreRegistry } from "../core/thread-store-registry";
-import type { CopilotKitCore, CopilotKitCoreSubscriber } from "../core/core";
+import { CopilotKitCore } from "../core/core";
+import type { CopilotKitCoreSubscriber } from "../core/core";
 import type { ɵThreadStore } from "../threads";
 
 // Minimal mock of CopilotKitCore that supports subscribing and notification
@@ -154,5 +155,122 @@ describe("ThreadStoreRegistry", () => {
     await Promise.resolve();
 
     expect(onUnregistered).not.toHaveBeenCalled();
+  });
+
+  it("re-registering the same store instance is a no-op for listeners (no flicker)", async () => {
+    const onRegistered = vi.fn();
+    const onUnregistered = vi.fn();
+    const subscriber: CopilotKitCoreSubscriber = {
+      onThreadStoreRegistered: onRegistered,
+      onThreadStoreUnregistered: onUnregistered,
+    };
+    (
+      core as unknown as { subscribe: (s: CopilotKitCoreSubscriber) => unknown }
+    ).subscribe(subscriber);
+
+    const store = makeStore();
+    registry.register("agent-1", store);
+    await Promise.resolve();
+    expect(onRegistered).toHaveBeenCalledTimes(1);
+    expect(onUnregistered).not.toHaveBeenCalled();
+
+    // Same instance — should NOT re-fire registered or unregistered.
+    registry.register("agent-1", store);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(onRegistered).toHaveBeenCalledTimes(1);
+    expect(onUnregistered).not.toHaveBeenCalled();
+    expect(registry.get("agent-1")).toBe(store);
+  });
+
+  it("on replace, listeners observe the new store mapped to the id during both notifications", async () => {
+    // Documents the registry's replace convention: the id maps to the NEW
+    // store while both the unregistered (for the old store) and registered
+    // (for the new store) events are dispatched. There is no intermediate
+    // "missing" state observable to listeners.
+    const observedDuringUnregistered: Array<ɵThreadStore | undefined> = [];
+    const observedDuringRegistered: Array<ɵThreadStore | undefined> = [];
+
+    const subscriber: CopilotKitCoreSubscriber = {
+      onThreadStoreUnregistered: () => {
+        observedDuringUnregistered.push(registry.get("agent-1"));
+      },
+      onThreadStoreRegistered: () => {
+        observedDuringRegistered.push(registry.get("agent-1"));
+      },
+    };
+    (
+      core as unknown as { subscribe: (s: CopilotKitCoreSubscriber) => unknown }
+    ).subscribe(subscriber);
+
+    const first = makeStore("first");
+    const second = makeStore("second");
+
+    registry.register("agent-1", first);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    registry.register("agent-1", second);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // Initial register: only registered fires, mapping is `first`.
+    expect(observedDuringRegistered[0]).toBe(first);
+
+    // Replace: unregistered observes `second` (already swapped in), and
+    // registered also observes `second`.
+    expect(observedDuringUnregistered[0]).toBe(second);
+    expect(observedDuringRegistered[1]).toBe(second);
+  });
+
+  it("replace fires unregistered before registered", async () => {
+    const calls: string[] = [];
+    const subscriber: CopilotKitCoreSubscriber = {
+      onThreadStoreUnregistered: () => {
+        calls.push("unregistered");
+      },
+      onThreadStoreRegistered: () => {
+        calls.push("registered");
+      },
+    };
+    (
+      core as unknown as { subscribe: (s: CopilotKitCoreSubscriber) => unknown }
+    ).subscribe(subscriber);
+
+    registry.register("agent-1", makeStore("first"));
+    await Promise.resolve();
+    await Promise.resolve();
+    registry.register("agent-1", makeStore("second"));
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(calls).toEqual(["registered", "unregistered", "registered"]);
+  });
+
+  it("auto-unregisters thread stores when their agent is removed via onAgentsChanged", async () => {
+    // CopilotKitCore subscribes internally to onAgentsChanged and drops any
+    // thread store whose agentId is no longer present in the new agents map.
+    // This guards the inspector teardown path: when an agent is removed, its
+    // store must not leak in the registry.
+    const ck = new CopilotKitCore({});
+    const onUnregistered = vi.fn();
+    ck.subscribe({ onThreadStoreUnregistered: onUnregistered });
+
+    const store = makeStore("agent-going-away");
+    ck.registerThreadStore("agent-going-away", store);
+    expect(ck.getThreadStore("agent-going-away")).toBe(store);
+
+    // Replace the agents map so "agent-going-away" is no longer present.
+    ck.setAgents__unsafe_dev_only({});
+    // Allow the subscriber microtask chain to flush.
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(ck.getThreadStore("agent-going-away")).toBeUndefined();
+    expect(onUnregistered).toHaveBeenCalledWith(
+      expect.objectContaining({ agentId: "agent-going-away" }),
+    );
   });
 });
