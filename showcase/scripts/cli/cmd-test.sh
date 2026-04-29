@@ -8,41 +8,48 @@ usage_test() {
   cat <<'HELP'
 Usage: showcase test <slug> [options]
 
-Run probe tests against a showcase service.
+Run probe tests against a showcase service (via Docker containers).
 
 Options:
-  --d5             Run D5 (subagents/tool-rendering/agentic-chat) probes only
-  --d6             Run D6 probes only
+  --d5             Run D5 (e2e-deep) probes only
+  --d4             Run D4 probes only
+  --smoke          Run smoke probes only
   --verbose        Verbose test output
+  --headed         Run Playwright in headed (visible) mode
+  --repeat <n>     Run N times
+  --keep           Don't stop auto-started packages after test
+  --live           Write results to PocketBase for dashboard
+  --rebuild        Force Docker rebuild before running
   --cycle          On failure, auto-dump aimock logs from the test window
-  --timeout <ms>   Test timeout in milliseconds (default: 30000)
 
 Examples:
   showcase test mastra --d5 --verbose         # D5 probes with verbose output
   showcase test mastra --d5 --cycle           # D5 + aimock logs on failure
   showcase test langgraph-python              # all tests for a slug
-  showcase test mastra --d5 --timeout 60000   # longer timeout
+  showcase test mastra --d5 --headed          # watch the browser
 HELP
 }
 
 cmd_test() {
   local slug=""
-  local d5_flag=""
-  local d6_flag=""
-  local verbose=""
   local cycle=""
-  local timeout="30000"
+  local harness_args=()
 
-  # Parse arguments
+  # Parse arguments — pass most through to the harness CLI
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      --d5)      d5_flag=1;   shift ;;
-      --d6)      d6_flag=1;   shift ;;
-      --verbose) verbose=1;   shift ;;
-      --cycle)   cycle=1;     shift ;;
-      --timeout)
+      --d5)      harness_args+=(--d5);      shift ;;
+      --d4)      harness_args+=(--d4);      shift ;;
+      --smoke)   harness_args+=(--smoke);   shift ;;
+      --verbose) harness_args+=(--verbose); shift ;;
+      --headed)  harness_args+=(--headed);  shift ;;
+      --keep)    harness_args+=(--keep);    shift ;;
+      --live)    harness_args+=(--live);    shift ;;
+      --rebuild) harness_args+=(--rebuild); shift ;;
+      --cycle)   cycle=1;                   shift ;;
+      --repeat)
         shift
-        timeout="${1:?--timeout requires a value}"
+        harness_args+=(--repeat "${1:?--repeat requires a value}")
         shift
         ;;
       -h|--help)
@@ -65,18 +72,13 @@ cmd_test() {
 
   need_slug "$slug"
 
-  # Validate mutually-exclusive depth flags
-  if [[ -n "$d5_flag" ]] && [[ -n "$d6_flag" ]]; then
-    die "--d5 and --d6 are mutually exclusive"
-  fi
-
-  # Build filter argument
-  local filter=""
-  if [[ -n "$d5_flag" ]]; then
-    filter="--d5"
-  elif [[ -n "$d6_flag" ]]; then
-    filter="--d6"
-  fi
+  # Build the filter description for the info line
+  local filter_desc=""
+  for arg in "${harness_args[@]}"; do
+    case "$arg" in
+      --d5|--d4|--smoke) filter_desc=" ($arg)" ;;
+    esac
+  done
 
   # If --cycle, record aimock log position before the test
   local pre_test_ts=""
@@ -89,42 +91,12 @@ cmd_test() {
     fi
   fi
 
-  # Run the tests
-  info "Testing $slug${filter:+ ($filter)}..."
+  info "Testing $slug${filter_desc}..."
   date -u +%Y-%m-%dT%H:%M:%SZ > "$SHOWCASE_ROOT/.last-test-ts"
 
   local test_exit=0
-
-  if [[ -f "$SHOWCASE_ROOT/scripts/run-e2e-with-aimock.sh" ]]; then
-    # Delegate to the existing e2e runner
-    bash "$SHOWCASE_ROOT/scripts/run-e2e-with-aimock.sh" \
-      "$slug" \
-      ${filter:+"$filter"} \
-      ${verbose:+--verbose} \
-      ${timeout:+--timeout "$timeout"} \
-      || test_exit=$?
-  else
-    # Fallback: direct Playwright invocation
-    local pkg_dir="$SHOWCASE_ROOT/integrations/$slug"
-    if [[ ! -d "$pkg_dir" ]]; then
-      die "Package directory not found: $pkg_dir"
-    fi
-
-    (
-      cd "$pkg_dir"
-
-      local pw_args=()
-      if [[ -n "$filter" ]]; then
-        pw_args+=(--grep "$filter")
-      fi
-      if [[ -n "$verbose" ]]; then
-        pw_args+=(--reporter=verbose)
-      fi
-      pw_args+=(--timeout "$timeout")
-
-      npx playwright test "${pw_args[@]}"
-    ) || test_exit=$?
-  fi
+  npx tsx "$SHOWCASE_ROOT/harness/src/cli.ts" test "$slug" "${harness_args[@]}" \
+    || test_exit=$?
 
   # --cycle: dump aimock log delta on failure
   if [[ $test_exit -ne 0 ]] && [[ -n "$cycle" ]] && [[ -n "$pre_test_ts" ]]; then

@@ -1,10 +1,10 @@
 {
-  "_comment": "D5 fixture for /demos/tool-rendering against LangGraph Python (LGP). Uses turnIndex matching: aimock counts assistant messages in the request to disambiguate multi-turn fixtures sharing the same userMessage. Fixtures ordered 0→N for readability.",
+  "_comment": "D5 fixture for /demos/tool-rendering against LangGraph Python (LGP). Uses hasToolResult matching: aimock checks for role:tool messages in the request to disambiguate multi-turn fixtures sharing the same userMessage. Fixtures ordered by hasToolResult false→true for readability.",
   "fixtures": [
     {
       "match": {
         "userMessage": "weather in Tokyo",
-        "turnIndex": 0
+        "hasToolResult": false
       },
       "response": {
         "toolCalls": [
@@ -19,7 +19,7 @@
     {
       "match": {
         "userMessage": "weather in Tokyo",
-        "turnIndex": 1
+        "hasToolResult": true
       },
       "response": {
         "content": "Tokyo is 22°C and partly cloudy."

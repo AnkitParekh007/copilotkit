@@ -1,10 +1,10 @@
 {
-  "_comment": "D5 multi-turn fixture for /demos/shared-state-read-write. Uses turnIndex matching: aimock counts assistant messages in the request to disambiguate multi-turn fixtures sharing the same userMessage. The 'favorite color' fixture has a unique userMessage and needs no turnIndex. Fixtures ordered 0→N for readability.",
+  "_comment": "D5 multi-turn fixture for /demos/shared-state-read-write. Uses hasToolResult matching: aimock checks for role:tool messages in the request to disambiguate multi-turn fixtures sharing the same userMessage. The 'favorite color' fixture has a unique userMessage and needs no hasToolResult. Fixtures ordered by hasToolResult false→true for readability.",
   "fixtures": [
     {
       "match": {
         "userMessage": "remember that my favorite color is blue",
-        "turnIndex": 0
+        "hasToolResult": false
       },
       "response": {
         "toolCalls": [
@@ -19,7 +19,7 @@
     {
       "match": {
         "userMessage": "remember that my favorite color is blue",
-        "turnIndex": 1
+        "hasToolResult": true
       },
       "response": {
         "content": "Got it — I have noted that your favorite color is blue."

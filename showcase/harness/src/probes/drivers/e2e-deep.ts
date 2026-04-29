@@ -756,7 +756,7 @@ export function createE2eDeepDriver(
                 },
                 observedAt: ctx.now().toISOString(),
               });
-              return { ft, ok: false as const };
+              return { ft, ok: false as const, errorDesc: timedOut ? `timeout after ${timeoutMs}ms` : "aborted" };
             }
 
             const featureResult = await runFeature({
@@ -811,7 +811,7 @@ export function createE2eDeepDriver(
                 },
                 observedAt: ctx.now().toISOString(),
               });
-              return { ft, ok: false as const };
+              return { ft, ok: false as const, errorDesc: featureResult.errorDesc };
             }
           } finally {
             sem.release();
@@ -824,6 +824,7 @@ export function createE2eDeepDriver(
         // so `settled[i]` corresponds to `runnable[i]`.
         let passed = 0;
         const failed: string[] = [];
+        const featureErrors: string[] = [];
         for (let i = 0; i < settled.length; i++) {
           const outcome = settled[i]!;
           if (outcome.status === "fulfilled") {
@@ -831,20 +832,24 @@ export function createE2eDeepDriver(
               passed++;
             } else {
               failed.push(outcome.value.ft);
+              if (outcome.value.errorDesc) {
+                featureErrors.push(`${outcome.value.ft}: ${outcome.value.errorDesc}`);
+              }
             }
           } else {
             // Rejected promise — should not happen since runFeature
             // catches internally, but guard defensively.
             const ft = runnable[i]!;
+            const errMsg = outcome.reason instanceof Error
+              ? outcome.reason.message
+              : String(outcome.reason);
             ctx.logger.error("probe.e2e-deep.feature-promise-rejected", {
               slug,
               featureType: ft,
-              err:
-                outcome.reason instanceof Error
-                  ? outcome.reason.message
-                  : String(outcome.reason),
+              err: errMsg,
             });
             failed.push(ft);
+            featureErrors.push(`${ft}: ${errMsg}`);
             try {
               await sideEmit(ctx, {
                 key: `d5:${slug}/${ft}`,
@@ -854,10 +859,7 @@ export function createE2eDeepDriver(
                   featureType: ft,
                   backendUrl,
                   errorClass: "promise-rejected",
-                  errorDesc:
-                    outcome.reason instanceof Error
-                      ? outcome.reason.message
-                      : String(outcome.reason),
+                  errorDesc: errMsg,
                 },
                 observedAt: ctx.now().toISOString(),
               });
@@ -879,6 +881,9 @@ export function createE2eDeepDriver(
             passed,
             failed,
             skipped,
+            failureSummary: featureErrors.length > 0
+              ? featureErrors.join("; ")
+              : undefined,
           },
           observedAt,
         };

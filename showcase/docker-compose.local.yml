@@ -1,5 +1,4 @@
 # Run the Railway-equivalent Docker image for every showcase package locally.
-# Prereq: run scripts/dev-local.sh which dereferences tools/ and shared-tools/ symlinks into each package build context first.
 # Ports come from shared/local-ports.json; internal port is always 10000 (Railway convention).
 
 x-integration-defaults: &integration-defaults
@@ -8,12 +7,15 @@ x-integration-defaults: &integration-defaults
     - OPENAI_API_KEY=${OPENAI_API_KEY:-sk-mock}
     - OPENAI_BASE_URL=http://aimock:4010/v1
     - AIMOCK_URL=http://aimock:4010
+    - GOOGLE_API_KEY=${GOOGLE_API_KEY:-fake-gemini-key}
+    - GOOGLE_GEMINI_BASE_URL=http://aimock:4010
+    - GitHubToken=${GitHubToken:-gh-mock-local-dev}
   depends_on:
     aimock:
       condition: service_healthy
   restart: unless-stopped
   healthcheck:
-    test: ["CMD", "curl", "-f", "http://localhost:10000/health"]
+    test: ["CMD", "curl", "-f", "http://localhost:10000/api/health"]
     interval: 5s
     timeout: 3s
     retries: 5
@@ -47,6 +49,8 @@ services:
         "/showcase-fixtures/smoke.json",
         "--fixtures",
         "/showcase-fixtures/feature-parity.json",
+        "--log-level",
+        "debug",
       ]
     healthcheck:
       test:
@@ -75,7 +79,7 @@ services:
     profiles: ["infra", "all"]
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8090/api/health"]
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8090/api/health"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -96,7 +100,13 @@ services:
     profiles: ["infra", "all"]
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:10000/"]
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://localhost:10000/').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
       interval: 5s
       timeout: 3s
       retries: 5

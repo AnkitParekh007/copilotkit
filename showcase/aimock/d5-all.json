@@ -1,5 +1,5 @@
 {
-  "_comment": "Bundled D5 (e2e-deep) fixtures. Source files: showcase/harness/fixtures/d5/*.json. Uses turnIndex matching for multi-turn disambiguation. Loaded by aimock before feature-parity.json for match precedence.",
+  "_comment": "Bundled D5 (e2e-deep) fixtures. Source files: showcase/harness/fixtures/d5/*.json. Uses hasToolResult matching for multi-turn disambiguation. Loaded by aimock before feature-parity.json for match precedence.",
   "fixtures": [
     {
       "match": {
@@ -28,7 +28,7 @@
     {
       "match": {
         "userMessage": "Show me a pie chart of revenue by category",
-        "turnIndex": 0
+        "hasToolResult": false
       },
       "response": {
         "toolCalls": [
@@ -43,7 +43,7 @@
     {
       "match": {
         "userMessage": "Show me a pie chart of revenue by category",
-        "turnIndex": 1
+        "hasToolResult": true
       },
       "response": {
         "content": "Pie chart rendered above — Electronics is the largest slice, followed by Clothing, Food, and Books."
@@ -52,7 +52,7 @@
     {
       "match": {
         "userMessage": "Write me a haiku about nature",
-        "turnIndex": 0
+        "hasToolResult": false
       },
       "response": {
         "toolCalls": [
@@ -67,7 +67,7 @@
     {
       "match": {
         "userMessage": "Write me a haiku about nature",
-        "turnIndex": 1
+        "hasToolResult": true
       },
       "response": {
         "content": "Haiku generated above — a beautiful verse about nature with an accompanying image."
@@ -76,7 +76,7 @@
     {
       "match": {
         "userMessage": "Show me a profile card for Ada Lovelace",
-        "turnIndex": 0
+        "hasToolResult": false
       },
       "response": {
         "toolCalls": [
@@ -91,7 +91,7 @@
     {
       "match": {
         "userMessage": "Show me a profile card for Ada Lovelace",
-        "turnIndex": 1
+        "hasToolResult": true
       },
       "response": {
         "content": "Here is a quick card for Ada Lovelace — the rendered card above shows a short biography. Let me know if you want a deeper dive on her work or a different historical figure."
@@ -100,7 +100,7 @@
     {
       "match": {
         "userMessage": "Issue a $50 refund to customer #12345",
-        "turnIndex": 0
+        "hasToolResult": false
       },
       "response": {
         "toolCalls": [
@@ -115,7 +115,7 @@
     {
       "match": {
         "userMessage": "Issue a $50 refund to customer #12345",
-        "turnIndex": 1
+        "hasToolResult": true
       },
       "response": {
         "content": "Approved — processing the $50 refund to customer #12345 now."
@@ -124,7 +124,7 @@
     {
       "match": {
         "userMessage": "trip to mars",
-        "turnIndex": 0
+        "hasToolResult": false
       },
       "response": {
         "toolCalls": [
@@ -139,7 +139,7 @@
     {
       "match": {
         "userMessage": "trip to mars",
-        "turnIndex": 1
+        "hasToolResult": true
       },
       "response": {
         "content": "Great choices! I will proceed with executing the selected steps for your trip to Mars. Let me work through each one."
@@ -148,7 +148,7 @@
     {
       "match": {
         "userMessage": "Book a 30-minute onboarding call for Alice",
-        "turnIndex": 0
+        "hasToolResult": false
       },
       "response": {
         "toolCalls": [
@@ -163,7 +163,7 @@
     {
       "match": {
         "userMessage": "Book a 30-minute onboarding call for Alice",
-        "turnIndex": 1
+        "hasToolResult": true
       },
       "response": {
         "content": "Booked Alice's onboarding call for the time you selected — calendar invite is on its way."
@@ -172,14 +172,14 @@
     {
       "match": {
         "userMessage": "Research the benefits of remote work and draft a one-paragraph summary",
-        "turnIndex": 0
+        "hasToolResult": false
       },
       "response": {
         "toolCalls": [
           {
             "id": "call_d5_research_agent_001",
             "name": "research_agent",
-            "arguments": "{\"topic\":\"Benefits of remote work\"}"
+            "arguments": "{\"task\":\"Benefits of remote work\"}"
           }
         ]
       }
@@ -203,7 +203,7 @@
           {
             "id": "call_d5_writing_agent_001",
             "name": "writing_agent",
-            "arguments": "{\"brief\":\"One-paragraph summary on the benefits of remote work, grounded in the research facts.\",\"facts\":\"- Eliminates commute, returning ~10 hours per week\\n- Higher reported job satisfaction in repeated surveys\\n- Wider talent pool for employers, no geographic limit\\n- Reduced office overhead\\n- Trade-offs: collaboration, mentorship, cultural cohesion\"}"
+            "arguments": "{\"task\":\"One-paragraph summary on the benefits of remote work, grounded in the research facts.\\n\\nFacts:\\n- Eliminates commute, returning ~10 hours per week\\n- Higher reported job satisfaction in repeated surveys\\n- Wider talent pool for employers, no geographic limit\\n- Reduced office overhead\\n- Trade-offs: collaboration, mentorship, cultural cohesion\"}"
           }
         ]
       }
@@ -227,7 +227,7 @@
           {
             "id": "call_d5_critique_agent_001",
             "name": "critique_agent",
-            "arguments": "{\"draft\":\"Remote work returns roughly ten hours a week to employees by eliminating the commute, and repeated surveys show meaningfully higher job satisfaction among remote workers. Employers benefit too: a geographically unbounded talent pool and lower office overhead. The honest counterweight is that ad-hoc collaboration, mentorship of junior staff, and cultural cohesion all degrade without intentional rituals to replace what an office provided implicitly.\"}"
+            "arguments": "{\"task\":\"Remote work returns roughly ten hours a week to employees by eliminating the commute, and repeated surveys show meaningfully higher job satisfaction among remote workers. Employers benefit too: a geographically unbounded talent pool and lower office overhead. The honest counterweight is that ad-hoc collaboration, mentorship of junior staff, and cultural cohesion all degrade without intentional rituals to replace what an office provided implicitly.\"}"
           }
         ]
       }
@@ -235,7 +235,7 @@
     {
       "_comment": "Nested: critique sub-agent single-turn LLM call",
       "match": {
-        "userMessage": "Review this draft"
+        "userMessage": "Remote work returns roughly ten hours"
       },
       "response": {
         "content": "1. Add a specific citation or date range for the surveys mentioned — 'repeated surveys' is vague and weakens the empirical claim.\n2. The ten-hours figure needs sourcing; without it the opening reads as an unsupported assertion rather than a research finding.\n3. The final sentence about 'intentional rituals' is abstract — one concrete example (e.g., scheduled pair-programming sessions, virtual coffee chats) would make the counterweight more actionable."
@@ -253,7 +253,7 @@
     {
       "match": {
         "userMessage": "remember that my favorite color is blue",
-        "turnIndex": 0
+        "hasToolResult": false
       },
       "response": {
         "toolCalls": [
@@ -268,7 +268,7 @@
     {
       "match": {
         "userMessage": "remember that my favorite color is blue",
-        "turnIndex": 1
+        "hasToolResult": true
       },
       "response": {
         "content": "Got it — I have noted that your favorite color is blue."
@@ -285,7 +285,7 @@
     {
       "match": {
         "userMessage": "weather in Tokyo",
-        "turnIndex": 0
+        "hasToolResult": false
       },
       "response": {
         "toolCalls": [
@@ -300,7 +300,7 @@
     {
       "match": {
         "userMessage": "weather in Tokyo",
-        "turnIndex": 1
+        "hasToolResult": true
       },
       "response": {
         "content": "Tokyo is 22°C and partly cloudy."

@@ -1,10 +1,10 @@
 {
-  "_comment": "D5 fixture for /demos/hitl — step selection via generate_task_steps frontend tool. Uses turnIndex matching: aimock counts assistant messages in the request to disambiguate multi-turn fixtures sharing the same userMessage. Fixtures ordered 0→N for readability.",
+  "_comment": "D5 fixture for /demos/hitl — step selection via generate_task_steps frontend tool. Uses hasToolResult matching: aimock checks for role:tool messages in the request to disambiguate multi-turn fixtures sharing the same userMessage. Fixtures ordered by hasToolResult false→true for readability.",
   "fixtures": [
     {
       "match": {
         "userMessage": "trip to mars",
-        "turnIndex": 0
+        "hasToolResult": false
       },
       "response": {
         "toolCalls": [
@@ -19,7 +19,7 @@
     {
       "match": {
         "userMessage": "trip to mars",
-        "turnIndex": 1
+        "hasToolResult": true
       },
       "response": {
         "content": "Great choices! I will proceed with executing the selected steps for your trip to Mars. Let me work through each one."
