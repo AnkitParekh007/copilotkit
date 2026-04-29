@@ -81,6 +81,8 @@ class CpkThreadDetails extends LitElement {
   private _stateNotAvailable = false;
   private _lastFetchedThreadId: string | null = null;
   private _messagesAbort: AbortController | null = null;
+  private _eventsAbort: AbortController | null = null;
+  private _stateAbort: AbortController | null = null;
   private _dividerResizing = false;
   private _dividerPointerId = -1;
   private _dividerStartX = 0;
@@ -627,8 +629,10 @@ class CpkThreadDetails extends LitElement {
       this._tab = "conversation";
       this._expandedTools = new Set();
       this._expandedMessages = new Set();
-      this._messagesAbort?.abort();
-      this._messagesAbort = null;
+      // Cancel any in-flight per-tab fetches for the previous thread. Each tab
+      // has its own controller so an aborted /messages call doesn't also
+      // cancel an unrelated /events or /state call.
+      this._abortAllFetches();
 
       const override = this.conversationOverride;
       if (override !== null) {
@@ -654,101 +658,157 @@ class CpkThreadDetails extends LitElement {
     }
   }
 
-  private async fetchMessages(threadId: string): Promise<void> {
+  disconnectedCallback(): void {
+    super.disconnectedCallback();
+    this._abortAllFetches();
+  }
+
+  private _abortAllFetches(): void {
+    this._messagesAbort?.abort();
+    this._messagesAbort = null;
+    this._eventsAbort?.abort();
+    this._eventsAbort = null;
+    this._stateAbort?.abort();
+    this._stateAbort = null;
+  }
+
+  /**
+   * Shared per-tab fetch driver. Owns the AbortController lifecycle, loading
+   * flag, error classification, and the 501 "not available" sentinel — so
+   * each tab fetcher only needs to declare which URL to hit and how to parse
+   * the response body. Caller supplies the tab descriptor; the helper writes
+   * back to the matching reactive state slot.
+   */
+  private async _fetchTab<T>(
+    tab: "messages" | "events" | "state",
+    threadId: string,
+    parser: (data: unknown) => T,
+    fallback: T,
+  ): Promise<void> {
+    const path =
+      tab === "messages" ? "messages" : tab === "events" ? "events" : "state";
+
+    // Reset the 501 sentinel for tabs that have one; messages doesn't.
+    if (tab === "events") this._eventsNotAvailable = false;
+    if (tab === "state") this._stateNotAvailable = false;
+
     if (!this.runtimeUrl) {
-      this._conversation = [];
+      if (tab === "messages") this._conversation = [];
+      else if (tab === "events") this._fetchedEvents = null;
+      else this._fetchedState = null;
       return;
     }
+
+    // Replace any in-flight controller for THIS tab. Other tabs are unaffected.
     const controller = new AbortController();
-    this._messagesAbort = controller;
-    this._loadingMessages = true;
-    this._messagesError = null;
+    if (tab === "messages") {
+      this._messagesAbort?.abort();
+      this._messagesAbort = controller;
+      this._loadingMessages = true;
+      this._messagesError = null;
+    } else if (tab === "events") {
+      this._eventsAbort?.abort();
+      this._eventsAbort = controller;
+      this._loadingEvents = true;
+      this._eventsError = null;
+    } else {
+      this._stateAbort?.abort();
+      this._stateAbort = controller;
+      this._loadingState = true;
+      this._stateError = null;
+    }
+
     try {
       const res = await fetch(
-        `${this.runtimeUrl}/threads/${encodeURIComponent(threadId)}/messages`,
+        `${this.runtimeUrl}/threads/${encodeURIComponent(threadId)}/${path}`,
         { headers: { ...this.headers }, signal: controller.signal },
       );
+      // 501 means "endpoint not supported on this runtime" (e.g. Intelligence
+      // platform). Set the per-tab sentinel so the renderer doesn't fall back
+      // to the parent's live agent-keyed data, which would render identically
+      // across every thread on the same agent. Messages has no sentinel —
+      // any non-200 there is a hard error.
+      if (res.status === 501 && tab !== "messages") {
+        if (tab === "events") {
+          this._eventsNotAvailable = true;
+          this._fetchedEvents = null;
+        } else {
+          this._stateNotAvailable = true;
+          this._fetchedState = null;
+        }
+        return;
+      }
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = (await res.json()) as { messages: ApiThreadMessage[] };
-      this._conversation = this.mapMessages(data.messages);
+      const data = (await res.json()) as unknown;
+      const parsed = parser(data);
+      if (tab === "messages") {
+        this._conversation = parsed as unknown as ConversationItem[];
+      } else if (tab === "events") {
+        this._fetchedEvents = parsed as unknown as ApiAgentEvent[];
+      } else {
+        this._fetchedState = parsed as unknown as Record<string, unknown> | null;
+      }
     } catch (err) {
       if (err instanceof Error && err.name === "AbortError") return;
-      this._messagesError =
-        err instanceof Error ? err.message : "Failed to load messages";
-      this._conversation = [];
+      const message =
+        err instanceof Error
+          ? err.message
+          : `Failed to load ${tab === "messages" ? "messages" : tab === "events" ? "events" : "state"}`;
+      if (tab === "messages") {
+        this._messagesError = message;
+        this._conversation = fallback as unknown as ConversationItem[];
+      } else if (tab === "events") {
+        this._eventsError = message;
+        this._fetchedEvents = fallback as unknown as ApiAgentEvent[];
+      } else {
+        this._stateError = message;
+        this._fetchedState = fallback as unknown as Record<string, unknown> | null;
+      }
     } finally {
+      // Don't toggle the loading flag if we were aborted — a newer fetch is
+      // already in flight and owns the flag now.
       if (!controller.signal.aborted) {
-        this._loadingMessages = false;
+        if (tab === "messages") this._loadingMessages = false;
+        else if (tab === "events") this._loadingEvents = false;
+        else this._loadingState = false;
       }
     }
   }
 
-  private async fetchEvents(threadId: string): Promise<void> {
-    this._eventsNotAvailable = false;
-    if (!this.runtimeUrl) {
-      this._fetchedEvents = null;
-      return;
-    }
-    this._loadingEvents = true;
-    this._eventsError = null;
-    try {
-      const res = await fetch(
-        `${this.runtimeUrl}/threads/${encodeURIComponent(threadId)}/events`,
-        { headers: { ...this.headers } },
-      );
-      if (res.status === 501) {
-        // Endpoint not supported on this runtime (e.g. Intelligence platform).
-        // Mark unavailable so we don't misleadingly fall back to the parent's
-        // live agent events — those are agent-keyed, not thread-keyed, and
-        // would render identical across every thread on the same agent.
-        this._eventsNotAvailable = true;
-        this._fetchedEvents = null;
-        return;
-      }
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = (await res.json()) as {
-        events: Array<Record<string, unknown>>;
-      };
-      this._fetchedEvents = this.mapApiEvents(data.events);
-    } catch (err) {
-      this._eventsError =
-        err instanceof Error ? err.message : "Failed to load events";
-      this._fetchedEvents = [];
-    } finally {
-      this._loadingEvents = false;
-    }
+  private fetchMessages(threadId: string): Promise<void> {
+    return this._fetchTab<ConversationItem[]>(
+      "messages",
+      threadId,
+      (data) => {
+        const { messages } = data as { messages: ApiThreadMessage[] };
+        return this.mapMessages(messages);
+      },
+      [],
+    );
   }
 
-  private async fetchState(threadId: string): Promise<void> {
-    this._stateNotAvailable = false;
-    if (!this.runtimeUrl) {
-      this._fetchedState = null;
-      return;
-    }
-    this._loadingState = true;
-    this._stateError = null;
-    try {
-      const res = await fetch(
-        `${this.runtimeUrl}/threads/${encodeURIComponent(threadId)}/state`,
-        { headers: { ...this.headers } },
-      );
-      if (res.status === 501) {
-        this._stateNotAvailable = true;
-        this._fetchedState = null;
-        return;
-      }
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = (await res.json()) as {
-        state: Record<string, unknown> | null;
-      };
-      this._fetchedState = data.state ?? null;
-    } catch (err) {
-      this._stateError =
-        err instanceof Error ? err.message : "Failed to load state";
-      this._fetchedState = null;
-    } finally {
-      this._loadingState = false;
-    }
+  private fetchEvents(threadId: string): Promise<void> {
+    return this._fetchTab<ApiAgentEvent[]>(
+      "events",
+      threadId,
+      (data) => {
+        const { events } = data as { events: Array<Record<string, unknown>> };
+        return this.mapApiEvents(events);
+      },
+      [],
+    );
+  }
+
+  private fetchState(threadId: string): Promise<void> {
+    return this._fetchTab<Record<string, unknown> | null>(
+      "state",
+      threadId,
+      (data) => {
+        const { state } = data as { state: Record<string, unknown> | null };
+        return state ?? null;
+      },
+      null,
+    );
   }
 
   private mapMessages(messages: ApiThreadMessage[]): ConversationItem[] {
