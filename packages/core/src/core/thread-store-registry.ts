@@ -1,6 +1,9 @@
-import { type ɵThreadStore } from "../threads";
+import type { ɵThreadStore } from "../threads";
 import type { CopilotKitCore } from "./core";
-import { CopilotKitCoreFriendsAccess, CopilotKitCoreSubscriber } from "./core";
+import type {
+  CopilotKitCoreFriendsAccess,
+  CopilotKitCoreSubscriber,
+} from "./core";
 
 export class ThreadStoreRegistry {
   private _stores: Record<string, ɵThreadStore> = {};
@@ -8,9 +11,25 @@ export class ThreadStoreRegistry {
   constructor(private core: CopilotKitCore) {}
 
   register(agentId: string, store: ɵThreadStore): void {
-    if (agentId in this._stores) {
-      delete this._stores[agentId];
+    const existing = this._stores[agentId];
+    // Re-registering the exact same store instance is a no-op for listeners,
+    // so we don't emit unregistered/registered. This avoids a flicker when a
+    // host element re-runs registration with no actual change.
+    if (existing === store) {
+      return;
+    }
+    if (existing !== undefined) {
+      // Replace ordering: emit unregistered for the old store BEFORE
+      // registering the new one. During notifyUnregistered, the new store is
+      // already installed in _stores — listeners that read get(agentId) from
+      // within the unregistered handler will observe the new store. The
+      // intent of the unregistered event is "the previous store binding is
+      // gone"; the new binding is observable on the subsequent registered
+      // event.
+      this._stores[agentId] = store;
       void this.notifyUnregistered(agentId);
+      void this.notifyRegistered(agentId, store);
+      return;
     }
     this._stores[agentId] = store;
     void this.notifyRegistered(agentId, store);
