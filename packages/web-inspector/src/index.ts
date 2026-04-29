@@ -176,7 +176,6 @@ type InspectorEvent = {
   payload: SanitizedValue;
 };
 
-
 export class WebInspectorElement extends LitElement {
   static properties = {
     core: { attribute: false },
@@ -380,11 +379,7 @@ export class WebInspectorElement extends LitElement {
   private ensureOwnedThreadStore(agentId: string): void {
     if (this._ownedThreadStores.has(agentId)) return;
     // Don't overwrite a store already registered by useThreads() or another external caller
-    if (
-      typeof (this.core as any)?.getThreadStore === "function" &&
-      (this.core as any).getThreadStore(agentId)
-    )
-      return;
+    if (this.core?.getThreadStore(agentId)) return;
     const core = this.core;
     if (!core?.runtimeUrl) return;
 
@@ -396,12 +391,11 @@ export class WebInspectorElement extends LitElement {
       agentId,
     });
     this._ownedThreadStores.set(agentId, store);
-    // Subscribe directly so threads render even on published cores that lack
-    // registerThreadStore (which triggers onThreadStoreRegistered → subscribeToThreadStore).
+    // Subscribe directly so threads render even when no other caller (e.g. useThreads)
+    // has registered this store; registerThreadStore triggers onThreadStoreRegistered →
+    // subscribeToThreadStore.
     this.subscribeToThreadStore(agentId, store);
-    if (typeof (core as any).registerThreadStore === "function") {
-      (core as any).registerThreadStore(agentId, store);
-    }
+    core.registerThreadStore(agentId, store);
   }
 
   private refreshOwnedThreadStore(agentId: string): void {
@@ -409,9 +403,7 @@ export class WebInspectorElement extends LitElement {
     if (!store) return;
     // refresh() re-fetches without resetting threads to [] first, so the list
     // stays visible while new data loads and survives transient fetch failures.
-    if (typeof (store as any).refresh === "function") {
-      (store as any).refresh();
-    }
+    store.refresh();
   }
 
   private removeOwnedThreadStore(agentId: string): void {
@@ -3332,7 +3324,6 @@ ${argsString}</pre
 
     return nothing;
   }
-
 
   private renderThreadsView() {
     if (!this._threadsUnlocked) {
