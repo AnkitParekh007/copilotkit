@@ -192,8 +192,6 @@ demos:
     highlight:
       - src/agents/gen_ui_tool_based_agent.py
       - src/app/demos/gen-ui-tool-based/page.tsx
-      - src/app/demos/gen-ui-tool-based/bar-chart.tsx
-      - src/app/demos/gen-ui-tool-based/pie-chart.tsx
       - src/app/api/copilotkit/route.ts
   - id: tool-rendering
     name: Tool Rendering

@@ -2,28 +2,28 @@
 
 ## What This Demo Shows
 
-Agent uses tools to trigger UI generation — frontend-defined chart components
-are exposed as tools the backend agent can call.
+Agent uses tools to trigger UI generation — a frontend-defined haiku tool
+is exposed via `useFrontendTool` and the backend agent calls it by name.
 
 ## How to Interact
 
 Try asking your Copilot to:
 
-- "Show me a bar chart of quarterly sales for Q1, Q2, Q3, Q4."
-- "Show me a pie chart of website traffic by source."
-- "Show a pie chart of smartphone market share by brand."
+- "Write me a haiku about nature."
+- "Create a haiku about the ocean."
+- "Generate a haiku about spring."
 
-The agent picks the right chart type and emits a tool call with structured
-`{label, value}` data; the frontend renders the result inline.
+The agent calls `generate_haiku` with structured haiku data (Japanese text,
+English translation, image, gradient); the frontend renders a HaikuCard inline.
 
 ## Technical Details
 
-- The chart components (`BarChart`, `PieChart`) are registered on the frontend
-  via `useComponent` from `@copilotkit/react-core/v2`. Each registration ships
-  a Zod parameter schema and a render function.
-- CopilotKit's runtime forwards those tool definitions to the MS Agent
-  Framework agent at request time, so the agent never sees them as backend
-  tools — it just calls `render_bar_chart` or `render_pie_chart` by name.
+- The `generate_haiku` tool is registered on the frontend via `useFrontendTool`
+  from `@copilotkit/react-core/v2`. It ships a Zod parameter schema, a handler,
+  and a render function.
+- CopilotKit's runtime forwards the tool definition to the MS Agent Framework
+  agent at request time, so the agent never sees it as a backend tool — it just
+  calls `generate_haiku` by name.
 - The MS Agent Framework agent (`gen_ui_tool_based_agent.py`) has `tools=[]`
-  and a system prompt that nudges it to choose the right chart for the
-  question and pass concise `{title, description, data}` arguments.
+  and a system prompt that nudges it to compose haiku and pass structured
+  `{japanese, english, image_name, gradient}` arguments.

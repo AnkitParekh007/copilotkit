@@ -1,7 +1,7 @@
 """MS Agent Framework agent backing the Shared State (Read + Write) demo.
 
-Mirrors langgraph-python/src/agents/shared_state_read_write.py and
-google-adk/src/agents/shared_state_read_write_agent.py:
+Mirrors the bidirectional shared-state pattern used by other showcase
+integrations:
 
 - UI -> agent (write): The UI owns a `preferences` object and writes it
   into agent state via `agent.setState({preferences: ...})`. The
@@ -10,9 +10,10 @@ google-adk/src/agents/shared_state_read_write_agent.py:
   LLM adapts.
 
 - agent -> UI (read): The agent calls `set_notes` to update a `notes`
-  list in shared state. The tool returns `state_update(...)` so the
-  AG-UI emitter pushes a deterministic StateSnapshotEvent after the
-  tool call. The UI reflects every update in real time via `useAgent`.
+  list in shared state. The `predict_state_config` mechanism extracts
+  the `notes` value from the tool call's `notes` argument and pushes
+  a StateSnapshotEvent to the UI. The UI reflects every update in
+  real time via `useAgent`.
 """
 
 from __future__ import annotations
@@ -20,8 +21,8 @@ from __future__ import annotations
 from textwrap import dedent
 from typing import Annotated
 
-from agent_framework import Agent, BaseChatClient, Content, tool
-from agent_framework_ag_ui import AgentFrameworkAgent, state_update
+from agent_framework import Agent, BaseChatClient, tool
+from agent_framework_ag_ui import AgentFrameworkAgent
 from pydantic import Field
 
 
@@ -59,12 +60,29 @@ STATE_SCHEMA: dict[str, object] = {
 
 
 # ---------------------------------------------------------------------------
+# predict_state_config — agent -> UI write path
+#
+# Instead of returning a Content/state_update object from the tool, we
+# use predict_state_config which extracts the state value directly from
+# the tool call's argument. This is the same mechanism the main sales
+# agent uses for salesTodos and is more compatible with the MS Agent
+# Framework's tool execution pipeline.
+# ---------------------------------------------------------------------------
+
+PREDICT_STATE_CONFIG: dict[str, dict[str, str]] = {
+    "notes": {
+        "tool": "set_notes",
+        "tool_argument": "notes",
+    },
+}
+
+
+# ---------------------------------------------------------------------------
 # Tool: set_notes — agent -> UI write path
 #
-# Returns a `state_update(...)` so the AG-UI emitter merges the new
-# `notes` into shared state and emits a deterministic StateSnapshotEvent
-# right after the tool result. This is the canonical MS Agent Framework
-# tool-driven shared-state pattern (see agent_framework_ag_ui._state).
+# Returns a plain string so the MS Agent Framework can serialize it as
+# a tool result and send it back to the LLM for the follow-up text.
+# The actual state update is handled by predict_state_config above.
 # ---------------------------------------------------------------------------
 
 
@@ -88,12 +106,9 @@ def set_notes(
             )
         ),
     ],
-) -> Content:
+) -> str:
     """Push the agent-authored notes into AG-UI shared state."""
-    return state_update(
-        text=f"Notes updated. Tracking {len(notes)} note(s).",
-        state={"notes": list(notes)},
-    )
+    return f"Notes updated. Tracking {len(notes)} note(s)."
 
 
 # ---------------------------------------------------------------------------
@@ -149,5 +164,6 @@ def create_shared_state_read_write_agent(
             "agent-authored `notes` back via the `set_notes` tool."
         ),
         state_schema=STATE_SCHEMA,
+        predict_state_config=PREDICT_STATE_CONFIG,
         require_confirmation=False,
     )

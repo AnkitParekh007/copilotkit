@@ -1,6 +1,7 @@
 """
-Tool-Based Generative UI demo — uses the shared MS Agent Framework agent at src/agents/agent.py
+Tool-Based Generative UI demo — uses the dedicated gen-ui agent at
+src/agents/gen_ui_tool_based_agent.py
 
-Frontend tools generate haiku cards with Japanese text and imagery.
-All demos share the same agent instance served by agent_server.py.
+Frontend tool `generate_haiku` is registered via useFrontendTool;
+the backend agent has tools=[] and a haiku-focused system prompt.
 """
