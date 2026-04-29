@@ -75,6 +75,20 @@ def schedule_meeting(reason: str):
     return json.dumps(schedule_meeting_impl(reason))
 
 
+@tool(external_execution=True, external_execution_silent=True)
+def request_user_approval(message: str, context: str = ""):
+    """
+    Ask the operator to approve or reject an action before you take it.
+    The operator will respond via an in-app modal dialog that appears
+    OUTSIDE the chat surface. The tool returns an object of the shape
+    { approved: boolean, reason?: string }.
+
+    Args:
+        message (str): Short summary of the action needing approval (include concrete numbers / IDs).
+        context (str): Optional extra context — e.g. the ticket ID or policy rule.
+    """
+
+
 @tool(external_execution=True)
 def change_background(background: str):
     """
@@ -88,7 +102,7 @@ def change_background(background: str):
     """
 
 
-@tool(external_execution=True)
+@tool(external_execution=True, external_execution_silent=True)
 def book_call(topic: str, name: str):
     """
     Ask the user to pick a time slot for a call. The picker UI presents
@@ -100,7 +114,7 @@ def book_call(topic: str, name: str):
     """
 
 
-@tool(external_execution=True)
+@tool(external_execution=True, external_execution_silent=True)
 def generate_task_steps(steps: list[dict]):
     """
     Generates a list of steps for the user to perform.
@@ -238,6 +252,7 @@ agent = Agent(
         change_background,
         book_call,
         generate_task_steps,
+        request_user_approval,
         search_flights,
         get_stock_price,
         roll_dice,
@@ -288,5 +303,13 @@ agent = Agent(
 
         DYNAMIC A2UI:
         Use generate_a2ui when the user asks for a dashboard or dynamic UI.
+
+        USER APPROVAL (HITL):
+        When asked to take any action that affects a customer — for example
+        issuing a refund, updating a plan, cancelling a subscription,
+        escalating a ticket, or sending a credit — call request_user_approval
+        FIRST with a short summary and optional context. Follow the tool
+        result: if approved, confirm in one short sentence; if rejected,
+        acknowledge and do not retry.
     """,
 )
