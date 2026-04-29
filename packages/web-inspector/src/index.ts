@@ -186,6 +186,9 @@ export class WebInspectorElement extends LitElement {
   private coreSubscriber: CopilotKitCoreSubscriber | null = null;
   private coreUnsubscribe: (() => void) | null = null;
   private runtimeStatus: CopilotKitCoreRuntimeConnectionStatus | null = null;
+  // TODO(ran-review): suspected dead code — please verify before removing
+  // (only assigned in attachToCore / onPropertiesChanged / detachFromCore;
+  //  never read after the inspector decomposition)
   private coreProperties: Readonly<Record<string, unknown>> = {};
   private lastCoreError: {
     code: CopilotKitCoreErrorCode;
@@ -406,6 +409,9 @@ export class WebInspectorElement extends LitElement {
     store.refresh();
   }
 
+  // TODO(ran-review): suspected dead code — please verify before removing
+  // (zero callers after inspector decomposition; teardownOwnedThreadStores
+  //  handles the only remaining cleanup path)
   private removeOwnedThreadStore(agentId: string): void {
     const store = this._ownedThreadStores.get(agentId);
     if (!store) return;
@@ -754,6 +760,9 @@ export class WebInspectorElement extends LitElement {
     }
   }
 
+  // TODO(ran-review): suspected dead code — please verify before removing
+  // (zero callers after thread-details was extracted into cpk-thread-details;
+  //  conversation rendering now lives in that element)
   private mapMessagesToConversation(
     messages: InspectorMessage[] | null,
   ): { id: string; type: string; content: string; createdAt: string }[] | null {
