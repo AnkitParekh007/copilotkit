@@ -24,6 +24,7 @@ it after every tool call. So mutating that dict in-place from a tool is
 sufficient — no custom event emission needed.
 """
 
+import os
 from typing import Annotated, Any
 
 from llama_index.core.workflow import Context
@@ -74,8 +75,12 @@ async def set_notes(
 # @endregion[set-notes-tool]
 
 
+_openai_kwargs = {}
+if os.environ.get("OPENAI_BASE_URL"):
+    _openai_kwargs["api_base"] = os.environ["OPENAI_BASE_URL"]
+
 shared_state_read_write_router = get_ag_ui_workflow_router(
-    llm=OpenAI(model="gpt-4.1"),
+    llm=OpenAI(model="gpt-4.1", **_openai_kwargs),
     frontend_tools=[],
     backend_tools=[set_notes],
     system_prompt=SYSTEM_PROMPT,

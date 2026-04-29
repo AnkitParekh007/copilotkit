@@ -14,6 +14,7 @@ shared-state todos; this LlamaIndex port keeps the surface focused on the
 from __future__ import annotations
 
 import json
+import os
 from typing import Annotated
 
 from llama_index.llms.openai import OpenAI
@@ -41,8 +42,12 @@ Be warm, pithy, and helpful. Avoid filler — let the chat surface itself
 do the talking."""
 
 
+_openai_kwargs = {}
+if os.environ.get("OPENAI_BASE_URL"):
+    _openai_kwargs["api_base"] = os.environ["OPENAI_BASE_URL"]
+
 beautiful_chat_router = get_ag_ui_workflow_router(
-    llm=OpenAI(model="gpt-4o-mini"),
+    llm=OpenAI(model="gpt-4o-mini", **_openai_kwargs),
     frontend_tools=[],
     backend_tools=[get_weather],
     system_prompt=SYSTEM_PROMPT,

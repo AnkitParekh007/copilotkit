@@ -5,8 +5,10 @@ import { CopilotKit } from "@copilotkit/react-core";
 import {
   CopilotChat,
   useComponent,
+  useFrontendTool,
   useConfigureSuggestions,
 } from "@copilotkit/react-core/v2";
+import { z } from "zod";
 import { BarChart, barChartPropsSchema } from "./bar-chart";
 import { PieChart, pieChartPropsSchema } from "./pie-chart";
 
@@ -15,6 +17,45 @@ export default function ToolBasedGenUiDemo() {
     <CopilotKit runtimeUrl="/api/copilotkit" agent="gen-ui-tool-based">
       <Chat />
     </CopilotKit>
+  );
+}
+
+interface Haiku {
+  japanese: string[];
+  english: string[];
+  image_name: string | null;
+  gradient: string;
+}
+
+function HaikuCard({ haiku }: { haiku: Partial<Haiku> }) {
+  return (
+    <div
+      data-testid="haiku-card"
+      style={{ background: haiku.gradient }}
+      className="relative bg-gradient-to-br from-slate-50 to-blue-50 rounded-2xl my-6 p-8 max-w-2xl border border-slate-200 overflow-hidden"
+    >
+      <div className="relative z-10 flex flex-col items-center space-y-6">
+        {haiku.japanese?.map((line, index) => (
+          <div
+            key={index}
+            className="flex flex-col items-center text-center space-y-2"
+          >
+            <p
+              data-testid="haiku-japanese-line"
+              className="font-serif font-bold text-4xl md:text-5xl bg-gradient-to-r from-slate-800 to-slate-600 bg-clip-text text-transparent tracking-wide"
+            >
+              {line}
+            </p>
+            <p
+              data-testid="haiku-english-line"
+              className="font-light text-base md:text-lg text-slate-600 italic max-w-md"
+            >
+              {haiku.english?.[index]}
+            </p>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -37,6 +78,40 @@ function Chat() {
   });
   // @endregion[pie-chart-renderer]
 
+  // @region[haiku-renderer]
+  useFrontendTool({
+    name: "generate_haiku",
+    parameters: z.object({
+      japanese: z.array(z.string()).describe("3 lines of haiku in Japanese"),
+      english: z
+        .array(z.string())
+        .describe("3 lines of haiku translated to English"),
+      image_name: z
+        .string()
+        .describe("One relevant image name from the valid set"),
+      gradient: z.string().describe("CSS Gradient color for the background"),
+    }),
+    followUp: false,
+    handler: async ({
+      japanese,
+      english,
+      image_name,
+      gradient,
+    }: {
+      japanese: string[];
+      english: string[];
+      image_name: string;
+      gradient: string;
+    }) => {
+      return "Haiku generated!";
+    },
+    render: ({ args }: { args: Partial<Haiku> }) => {
+      if (!args.japanese) return <></>;
+      return <HaikuCard haiku={args as Haiku} />;
+    },
+  });
+  // @endregion[haiku-renderer]
+
   useConfigureSuggestions({
     suggestions: [
       {
@@ -48,8 +123,8 @@ function Chat() {
         message: "Show me a pie chart of website traffic by source.",
       },
       {
-        title: "Market share",
-        message: "Show a pie chart of smartphone market share by brand.",
+        title: "Nature haiku",
+        message: "Write me a haiku about nature",
       },
     ],
     available: "always",

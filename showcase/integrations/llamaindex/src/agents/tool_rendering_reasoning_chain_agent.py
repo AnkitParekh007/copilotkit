@@ -12,6 +12,7 @@ Mirrors `langgraph-python/src/agents/tool_rendering_reasoning_chain_agent.py`.
 from __future__ import annotations
 
 import json
+import os
 from random import choice, randint
 from typing import Annotated
 
@@ -79,8 +80,12 @@ SYSTEM_PROMPT = (
 )
 
 
+_openai_kwargs = {}
+if os.environ.get("OPENAI_BASE_URL"):
+    _openai_kwargs["api_base"] = os.environ["OPENAI_BASE_URL"]
+
 tool_rendering_reasoning_chain_router = get_ag_ui_workflow_router(
-    llm=OpenAI(model="gpt-4.1"),
+    llm=OpenAI(model="gpt-4.1", **_openai_kwargs),
     frontend_tools=[],
     backend_tools=[get_weather, search_flights, get_stock_price, roll_dice],
     system_prompt=SYSTEM_PROMPT,

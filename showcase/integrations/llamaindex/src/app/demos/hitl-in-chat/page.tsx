@@ -49,17 +49,19 @@ function Chat() {
     agentId: "human_in_the_loop",
     name: "book_call",
     description:
-      "Ask the user to pick a time slot for a meeting. The picker UI presents fixed candidate slots; the user's choice is returned to the agent.",
+      "Ask the user to pick a time slot for a call. The picker UI presents fixed candidate slots; the user's choice is returned to the agent.",
     parameters: z.object({
       topic: z
         .string()
-        .describe("What the call is about (e.g. 'Onboarding call')"),
-      name: z.string().describe("Name of the attendee"),
+        .describe("What the call is about (e.g. 'Intro with sales')"),
+      attendee: z
+        .string()
+        .describe("Who the call is with (e.g. 'Alice from Sales')"),
     }),
     render: ({ args, status, respond }: any) => (
       <TimePickerCard
         topic={args?.topic ?? "a call"}
-        attendee={args?.name}
+        attendee={args?.attendee}
         slots={DEFAULT_SLOTS}
         status={status}
         onSubmit={(result) => respond?.(result)}

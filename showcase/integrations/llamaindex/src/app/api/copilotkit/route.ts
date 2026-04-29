@@ -24,7 +24,6 @@ function createAgent(subpath: string = "") {
 // render slots).
 const sharedAgentNames = [
   "agentic_chat",
-  "human_in_the_loop",
   "tool-rendering",
   "tool-rendering-default-catchall",
   "tool-rendering-custom-catchall",
@@ -34,7 +33,6 @@ const sharedAgentNames = [
   "shared-state-streaming",
   "frontend_tools",
   "frontend_tools_async",
-  "hitl_in_app",
   "prebuilt_sidebar",
   "prebuilt_popup",
   "chat_slots",
@@ -55,6 +53,8 @@ const specializedAgents: Record<string, string> = {
   "shared-state-read-write": "/shared-state-read-write",
   "gen-ui-tool-based": "/gen-ui-tool-based",
   "beautiful-chat": "/beautiful-chat",
+  human_in_the_loop: "/hitl-in-chat",
+  hitl_in_app: "/hitl-in-app",
   subagents: "/subagents",
 };
 

@@ -57,11 +57,11 @@ def generate_task_steps(
 
 
 def book_call(
-    topic: Annotated[str, "What the call is about (e.g. 'Onboarding call')"],
-    name: Annotated[str, "Name of the attendee"],
+    topic: Annotated[str, "What the call is about (e.g. 'Intro with sales')"],
+    attendee: Annotated[str, "Who the call is with (e.g. 'Alice from Sales')"],
 ) -> str:
     """Ask the user to pick a time slot for a call. The picker UI presents fixed candidate slots; the user's choice is returned to the agent."""
-    return f"Booking call about {topic} with {name}"
+    return f"Booking call about {topic} with {attendee}"
 
 
 # --- Backend tools (executed server-side, using shared implementations) ---

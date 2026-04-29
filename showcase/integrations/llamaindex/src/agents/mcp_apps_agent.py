@@ -13,6 +13,8 @@ Mirrors `langgraph-python/src/agents/mcp_apps_agent.py`.
 
 from __future__ import annotations
 
+import os
+
 from llama_index.llms.openai import OpenAI
 from llama_index.protocols.ag_ui.router import get_ag_ui_workflow_router
 
@@ -51,8 +53,12 @@ particular layout), follow their lead — but still in ONE call.
 """
 
 
+_openai_kwargs = {}
+if os.environ.get("OPENAI_BASE_URL"):
+    _openai_kwargs["api_base"] = os.environ["OPENAI_BASE_URL"]
+
 mcp_apps_router = get_ag_ui_workflow_router(
-    llm=OpenAI(model="gpt-4o-mini"),
+    llm=OpenAI(model="gpt-4o-mini", **_openai_kwargs),
     frontend_tools=[],
     backend_tools=[],
     system_prompt=SYSTEM_PROMPT,
