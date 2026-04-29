@@ -42,8 +42,8 @@ from agents.shared_state_streaming_agent import (
     SHARED_STATE_STREAMING_PREDICT_STATE,
 )
 from agents.subagents_agent import subagents_root_agent
-from agents.hitl_in_chat_agent import hitl_in_chat_agent
 from agents.hitl_in_chat_book_call_agent import hitl_in_chat_book_call_agent
+from agents.hitl_in_chat_agent import hitl_in_chat_agent
 from agents.hitl_in_app_agent import hitl_in_app_agent
 from agents.mcp_apps_agent import mcp_apps_agent
 from agents.multimodal_agent import multimodal_agent

@@ -1,35 +1,21 @@
-"""Agent backing the In-Chat Human in the Loop demo.
+"""ADK agent backing the In-Chat Human in the Loop demo (hitl-steps).
 
-Mirrors the existing google-adk hitl/ demo's pattern: the agent calls a
-`generate_task_steps` tool whose execution the frontend resolves via
-useHumanInTheLoop({ render }) — the user picks/approves steps in the chat
-and `respond({...})` is forwarded back to the agent as the tool result.
+The ``generate_task_steps`` tool is defined on the FRONTEND via
+``useHumanInTheLoop`` — the user picks/approves steps in the chat
+and the selection flows back as the tool result.  This matches the
+canonical HITL pattern used by every other showcase integration
+(langgraph-python, pydantic-ai, ms-agent-python, etc.).
 
-Backend tool body simply emits a placeholder dict; the real work happens
-on the frontend (the renderer waits for user input and resolves the call).
+The backend agent has NO tools of its own — CopilotKit's middleware
+injects the frontend-registered tool definition into the LLM call so
+the model can invoke it.
 """
 
 from __future__ import annotations
 
 from google.adk.agents import LlmAgent
-from google.adk.tools import ToolContext
 
 from agents.shared_chat import get_model
-
-
-def generate_task_steps(tool_context: ToolContext, steps: list[dict]) -> dict:
-    """Generate a list of steps for the user to review.
-
-    Each step has `description: str` and `status: "enabled" | "disabled" |
-    "executing"`. Always emit each step initially with status="enabled".
-    The frontend renders the steps as an inline approval UI; the user
-    enables/disables/confirms and `respond({...})` is forwarded back as
-    this tool's result.
-    """
-    return {
-        "status": "pending_human_decision",
-        "step_count": len(steps),
-    }
 
 
 _INSTRUCTION = (
@@ -45,5 +31,5 @@ hitl_in_chat_agent = LlmAgent(
     name="HitlInChatAgent",
     model=get_model(),
     instruction=_INSTRUCTION,
-    tools=[generate_task_steps],
+    tools=[],
 )
