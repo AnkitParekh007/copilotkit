@@ -3,7 +3,8 @@ import fs from "node:fs";
 import path from "node:path";
 import yaml from "js-yaml";
 import { createRenderer } from "../render/renderer.js";
-import { emptyTriggerFlags, type TemplateContext } from "../types/index.js";
+import { emptyTriggerFlags } from "../types/index.js";
+import type { TemplateContext } from "../types/index.js";
 
 /**
  * Items 2 + 3 red-phase coverage for the four per-service red-tick YAMLs.
@@ -165,5 +166,4 @@ describe("red-tick YAML rendering — Items 2 & 3", () => {
       expect(rendered).toContain("/runs/run-abc|Run");
     });
   });
-
 });
