@@ -6,6 +6,8 @@ The Next.js CopilotKit runtime proxies requests to each interface via AG-UI.
 
 Interfaces:
     /agui                       → main agent (sales assistant, most demos)
+                                  Custom handler that forwards tool results
+                                  from AGUI messages so HITL round-trips work.
     /reasoning/agui             → reasoning-capable agent
     /shared-state-rw/agui       → bidirectional shared-state agent
                                   (custom router emits STATE_SNAPSHOT)
@@ -16,7 +18,7 @@ Interfaces:
 import asyncio
 import os
 import uuid
-from typing import Any, AsyncIterator, Optional, Union
+from typing import Any, AsyncIterator, List, Optional, Set, Union
 
 import dotenv
 from ag_ui.core import (
@@ -28,8 +30,10 @@ from ag_ui.core import (
     RunStartedEvent,
     StateSnapshotEvent,
 )
+from ag_ui.core.types import Message as AGUIMessage
 from ag_ui.encoder import EventEncoder
 from agno.agent import Agent, RemoteAgent
+from agno.models.message import Message
 from agno.os import AgentOS
 from agno.os.interfaces.agui import AGUI
 from agno.os.interfaces.agui.utils import (
@@ -37,6 +41,7 @@ from agno.os.interfaces.agui.utils import (
     extract_agui_user_input,
     validate_agui_state,
 )
+from agno.utils.log import log_debug, log_warning
 from fastapi import FastAPI
 from fastapi.responses import StreamingResponse
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -59,6 +64,179 @@ from agents.shared_state_read_write import agent as shared_state_rw_agent
 from agents.subagents import agent as subagents_supervisor
 
 dotenv.load_dotenv()
+
+
+# ---------------------------------------------------------------------------
+# AGUI message conversion for HITL tool-result forwarding
+# ---------------------------------------------------------------------------
+#
+# agno >= 2.5.17 changed the stock AGUI router to use
+# `extract_agui_user_input()` which passes ONLY the last user message to
+# the agent. This works for simple chat but breaks Human-in-the-Loop
+# flows: the second request (after the user confirms/rejects in the HITL
+# UI) carries the tool result as an AGUI "tool" role message. Since
+# `extract_agui_user_input` discards all non-user messages, the tool
+# result never reaches the LLM and the agent just re-calls the tool and
+# pauses again.
+#
+# The helper below converts AGUI messages to agno Messages — the same
+# thing `convert_agui_messages_to_agno_messages` did in older agno
+# releases — so we can detect tool results and pass the full conversation
+# to the agent when they exist.
+
+
+def _has_tool_results(messages: List[AGUIMessage]) -> bool:
+    """Return True if the message list contains any tool-result messages."""
+    return any(msg.role == "tool" for msg in messages)
+
+
+def _convert_agui_messages(messages: List[AGUIMessage]) -> List[Message]:
+    """Convert AG-UI messages to Agno messages (full conversation).
+
+    Mirrors the old `convert_agui_messages_to_agno_messages` from
+    agno < 2.5.17. Keeps assistant tool_calls only when a matching
+    tool-result message exists, so the LLM always sees complete pairs.
+    """
+    # First pass: collect tool_call_ids that have results
+    tool_ids_with_results: Set[str] = set()
+    for msg in messages:
+        if msg.role == "tool" and msg.tool_call_id:
+            tool_ids_with_results.add(msg.tool_call_id)
+
+    result: List[Message] = []
+    seen_tool_ids: Set[str] = set()
+
+    for msg in messages:
+        if msg.role == "tool":
+            if msg.tool_call_id in seen_tool_ids:
+                continue
+            seen_tool_ids.add(msg.tool_call_id)
+            result.append(
+                Message(
+                    role="tool",
+                    tool_call_id=msg.tool_call_id,
+                    content=msg.content,
+                )
+            )
+        elif msg.role == "assistant":
+            tool_calls = None
+            if msg.tool_calls:
+                filtered = [
+                    tc for tc in msg.tool_calls
+                    if tc.id in tool_ids_with_results
+                ]
+                if filtered:
+                    tool_calls = [tc.model_dump(exclude_none=True) for tc in filtered]
+            result.append(
+                Message(
+                    role="assistant",
+                    content=msg.content,
+                    tool_calls=tool_calls,
+                )
+            )
+        elif msg.role == "user":
+            result.append(Message(role="user", content=msg.content))
+        # system messages are skipped — agent builds its own
+
+    return result
+
+
+# ---------------------------------------------------------------------------
+# HITL-aware AGUI handler for the main agent
+# ---------------------------------------------------------------------------
+#
+# The stock AGUI handler passes only the last user message to the agent,
+# relying on agno's session DB for history.  This works for standard chat
+# but breaks HITL: the second leg (tool-result) is dropped.
+#
+# This custom handler detects tool results in the incoming AGUI messages
+# and, when present, passes the full message list to the agent instead.
+# For first-leg requests (no tool results) it falls back to the stock
+# `extract_agui_user_input` behaviour.
+
+
+async def _run_main_agent_hitl_aware(
+    agent: Union[Agent, RemoteAgent], run_input: RunAgentInput
+) -> AsyncIterator[BaseEvent]:
+    """Stream one agent run, forwarding tool results when present."""
+    run_id = run_input.run_id or str(uuid.uuid4())
+    thread_id = run_input.thread_id
+
+    try:
+        messages = run_input.messages or []
+        has_results = _has_tool_results(messages)
+
+        if has_results:
+            # Second leg: convert full conversation so the LLM sees the
+            # tool result and can generate a follow-up response.
+            agent_input = _convert_agui_messages(messages)
+            log_debug("HITL-aware handler: forwarding full messages (tool results present)")
+        else:
+            # First leg: extract only the user message (stock behaviour).
+            agent_input = extract_agui_user_input(messages)
+            log_debug("HITL-aware handler: extracting user input (no tool results)")
+
+        yield RunStartedEvent(
+            type=EventType.RUN_STARTED, thread_id=thread_id, run_id=run_id
+        )
+
+        user_id: Optional[str] = None
+        if run_input.forwarded_props and isinstance(run_input.forwarded_props, dict):
+            user_id = run_input.forwarded_props.get("user_id")
+
+        session_state = validate_agui_state(run_input.state, thread_id) or {}
+
+        response_stream = agent.arun(  # type: ignore[attr-defined]
+            input=agent_input,
+            session_id=thread_id,
+            stream=True,
+            stream_events=True,
+            user_id=user_id,
+            session_state=session_state,
+            run_id=run_id,
+            # When we pass full messages (HITL second leg), disable session
+            # history to avoid duplicating messages the caller already sent.
+            add_history_to_context=not has_results,
+        )
+
+        async for event in async_stream_agno_response_as_agui_events(
+            response_stream=response_stream,  # type: ignore[arg-type]
+            thread_id=thread_id,
+            run_id=run_id,
+        ):
+            yield event
+
+    except asyncio.CancelledError:  # noqa: TRY302
+        raise
+    except Exception as exc:  # noqa: BLE001
+        yield RunErrorEvent(type=EventType.RUN_ERROR, message=str(exc))
+
+
+def _attach_hitl_aware_route(
+    app: FastAPI, agent: Agent, prefix: str
+) -> None:
+    """Mount a HITL-aware AGUI POST endpoint at `<prefix>/agui`."""
+    encoder = EventEncoder()
+    route = f"{prefix.rstrip('/')}/agui"
+
+    async def _handler(run_input: RunAgentInput) -> StreamingResponse:
+        async def _gen():
+            async for event in _run_main_agent_hitl_aware(agent, run_input):
+                yield encoder.encode(event)
+
+        return StreamingResponse(
+            _gen(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
+                "Access-Control-Allow-Headers": "*",
+            },
+        )
+
+    app.post(route, name=f"agui_hitl_aware_{prefix.strip('/')}")(_handler)
 
 
 # ---------------------------------------------------------------------------
@@ -292,7 +470,8 @@ agent_os = AgentOS(
         subagents_supervisor,
     ],
     interfaces=[
-        AGUI(agent=main_agent),  # default prefix "" -> /agui
+        # main_agent is mounted separately below via _attach_hitl_aware_route
+        # so it can forward tool results for HITL round-trips.
         AGUI(agent=reasoning_agent, prefix="/reasoning"),  # -> /reasoning/agui
         # No-tools agent for the MCP Apps cell. The CopilotKit runtime's
         # `mcpApps.servers` middleware injects MCP server tools at request
@@ -322,6 +501,12 @@ agent_os = AgentOS(
     ],
 )
 app = agent_os.get_app()
+
+# HITL-aware route for the main agent.  Replaces the stock AGUI interface
+# (``AGUI(agent=main_agent)``) so tool results from the CopilotKit runtime
+# are forwarded to the LLM on the second leg of HITL flows instead of being
+# silently dropped by ``extract_agui_user_input()``.
+_attach_hitl_aware_route(app, main_agent, "")
 
 # State-aware routes (bidirectional shared state via StateSnapshotEvent).
 # Mounted directly on the AgentOS FastAPI app so they share routing and
