@@ -44,6 +44,8 @@ const graphSpec = {
   starterAgent: "./graph.ts:graph",
   shared_state_read_write: "./shared-state-read-write.ts:graph",
   subagents: "./subagents.ts:graph",
+  hitl_in_app: "./hitl-in-app.ts:graph",
+  hitl_in_chat: "./hitl-in-chat.ts:graph",
 };
 
 // Pre-warm schema cache before we accept traffic. This is what the official
