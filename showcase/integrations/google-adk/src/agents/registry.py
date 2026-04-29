@@ -42,7 +42,6 @@ from agents.shared_state_streaming_agent import (
     SHARED_STATE_STREAMING_PREDICT_STATE,
 )
 from agents.subagents_agent import subagents_root_agent
-from agents.hitl_in_chat_agent import hitl_in_chat_agent
 from agents.hitl_in_chat_book_call_agent import hitl_in_chat_book_call_agent
 from agents.hitl_in_app_agent import hitl_in_app_agent
 from agents.mcp_apps_agent import mcp_apps_agent
@@ -113,7 +112,7 @@ AGENT_REGISTRY: dict[str, AgentSpec] = {
     "tool-rendering": AgentSpec(tool_rendering_agent),
     "gen-ui-tool-based": AgentSpec(gen_ui_tool_based_agent),
     "gen-ui-agent": AgentSpec(gen_ui_agent),
-    "human_in_the_loop": AgentSpec(hitl_in_chat_agent),
+    "human_in_the_loop": AgentSpec(_simple_chat),
     "shared-state-read": AgentSpec(shared_state_read_agent),
     "shared-state-write": AgentSpec(shared_state_read_write_agent),
     "shared-state-read-write": AgentSpec(shared_state_read_write_agent),
