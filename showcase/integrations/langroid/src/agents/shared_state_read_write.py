@@ -18,6 +18,12 @@ fresh snapshot whenever the agent mutates state.
 
 The handler is wired up by ``agent_server.py`` at ``POST
 /shared-state-read-write``.
+
+LLM calls use the OpenAI client directly (not langroid's agent
+abstraction) so that aimock can intercept and fixture-match requests by
+message history shape (including ``hasToolResult`` matching on
+``role: "tool"`` messages in the follow-up turn). The tool definition
+for ``set_notes`` is passed as an OpenAI-format tool spec.
 """
 
 from __future__ import annotations
@@ -26,7 +32,7 @@ import json
 import logging
 import os
 import uuid
-from typing import Annotated, Any, AsyncGenerator
+from typing import Any, AsyncGenerator
 
 from ag_ui.core import (
     EventType,
@@ -45,9 +51,7 @@ from ag_ui.core import (
 from fastapi import Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
-import langroid as lr
-import langroid.language_models as lm
-from langroid.agent.tool_message import ToolMessage
+import openai
 
 logger = logging.getLogger(__name__)
 
@@ -122,32 +126,38 @@ def build_preferences_system_message(prefs: dict[str, Any]) -> str | None:
 
 
 # =====================================================================
-# `set_notes` tool — agent writes the notes slice of shared state.
+# `set_notes` tool — OpenAI function spec for the tool the agent uses
+# to write the notes slice of shared state.
 # =====================================================================
 
-
-class SetNotesTool(ToolMessage):
-    request: str = "set_notes"
-    purpose: str = (
-        "Replace the notes array in shared state with the FULL updated list "
-        "of short note strings (existing notes + any new ones). Use whenever "
-        "the user asks you to remember something, or when you observe "
-        "something worth surfacing in the UI's notes panel. Keep each note "
-        "short (< 120 chars)."
-    )
-    notes: Annotated[
-        list[str],
-        "The complete list of notes after the update. Always include every "
-        "previously-recorded note you want to keep — this REPLACES the array.",
-    ]
-
-    def handle(self) -> str:
-        # The handler is invoked synchronously by langroid when the agent
-        # decides to call the tool; we return a confirmation string so the
-        # agent has something to incorporate into its next message. The
-        # actual state mutation happens in the SSE adapter below — it
-        # intercepts the tool call and emits a STATE_SNAPSHOT.
-        return json.dumps({"ok": True, "count": len(self.notes)})
+_SET_NOTES_TOOL_SPEC: dict[str, Any] = {
+    "type": "function",
+    "function": {
+        "name": "set_notes",
+        "description": (
+            "Replace the notes array in shared state with the FULL updated "
+            "list of short note strings (existing notes + any new ones). Use "
+            "whenever the user asks you to remember something, or when you "
+            "observe something worth surfacing in the UI's notes panel. Keep "
+            "each note short (< 120 chars)."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "notes": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": (
+                        "The complete list of notes after the update. Always "
+                        "include every previously-recorded note you want to "
+                        "keep — this REPLACES the array."
+                    ),
+                },
+            },
+            "required": ["notes"],
+        },
+    },
+}
 
 
 _SYSTEM_PROMPT = (
@@ -163,30 +173,28 @@ _SYSTEM_PROMPT = (
 )
 
 
-def _create_agent(
-    system_message: str, *, with_set_notes: bool = True
-) -> lr.ChatAgent:
-    """Construct the langroid ChatAgent backing the demo.
+async def _call_openai(
+    messages: list[dict[str, Any]],
+    tools: list[dict[str, Any]] | None = None,
+) -> Any:
+    """Call the OpenAI chat completions API directly.
 
-    Mirrors ``agents.agent.create_agent``: bare model name, streaming on,
-    only the demo-specific tool registered (``set_notes``).
+    Uses ``openai.AsyncOpenAI()`` which reads ``OPENAI_API_KEY`` and
+    ``OPENAI_BASE_URL`` from the environment (aimock sets the base URL
+    in the showcase). Returns the first choice's message object.
 
-    ``with_set_notes`` lets the post-tool follow-up turn use an agent
-    that does NOT have ``set_notes`` enabled. Without this, the
-    follow-up call could re-trigger ``set_notes`` and loop indefinitely
-    (the agent keeps "writing notes" instead of producing the
-    confirmation prose we asked for).
+    When ``tools`` is None or empty, omits the tools parameter so the
+    follow-up call (no tool needed) doesn't confuse the model into
+    re-calling tools.
     """
     model = os.getenv("LANGROID_MODEL", "gpt-4.1")
-    llm_config = lm.OpenAIGPTConfig(chat_model=model, stream=True)
-    agent_config = lr.ChatAgentConfig(
-        llm=llm_config,
-        system_message=system_message,
+    client = openai.AsyncOpenAI()
+    response = await client.chat.completions.create(
+        model=model,
+        messages=messages,
+        tools=tools if tools else openai.NOT_GIVEN,
     )
-    agent = lr.ChatAgent(agent_config)
-    if with_set_notes:
-        agent.enable_message([SetNotesTool])
-    return agent
+    return response.choices[0].message
 
 
 # =====================================================================
@@ -202,57 +210,139 @@ def _sse_line(event: Any) -> str:
     return f"data: {json.dumps(data)}\n\n"
 
 
-def _build_conversation(messages: Any) -> str:
-    """Flatten AG-UI messages into a single langroid prompt.
+def _agui_messages_to_openai(
+    messages: Any,
+    system_prompt: str,
+) -> list[dict[str, Any]]:
+    """Convert AG-UI messages to OpenAI chat completion format.
 
-    Mirrors ``agui_adapter.handle_run`` — silently skip any message
-    whose role/content isn't a string so a malformed frontend can't
-    inject ``"None: {...}"`` lines into the LLM context.
+    Preserves structured fields (tool_calls, tool_call_id) so aimock's
+    ``hasToolResult`` fixture matcher can detect ``role: "tool"`` messages
+    in follow-up turns. Mirrors ``agui_adapter._agui_messages_to_openai``.
     """
-    parts: list[str] = []
+    oai_msgs: list[dict[str, Any]] = [
+        {"role": "system", "content": system_prompt},
+    ]
+
     if not messages:
-        return ""
+        return oai_msgs
+
     for msg in messages:
-        role = getattr(msg, "role", None) if hasattr(msg, "role") else (
-            msg.get("role") if isinstance(msg, dict) else None
-        )
-        content = getattr(msg, "content", None) if hasattr(msg, "content") else (
-            msg.get("content") if isinstance(msg, dict) else None
-        )
-        if isinstance(role, str) and isinstance(content, str):
-            parts.append(f"{role}: {content}")
-    return "\n".join(parts)
+        role = getattr(msg, "role", None)
+        if not isinstance(role, str):
+            if isinstance(msg, dict):
+                role = msg.get("role")
+            if not isinstance(role, str):
+                continue
+
+        if role == "tool":
+            tool_call_id = getattr(msg, "tool_call_id", None)
+            if isinstance(msg, dict):
+                tool_call_id = tool_call_id or msg.get("tool_call_id")
+            content = getattr(msg, "content", "") or ""
+            if isinstance(msg, dict):
+                content = content or msg.get("content", "")
+            if tool_call_id:
+                oai_msgs.append({
+                    "role": "tool",
+                    "tool_call_id": str(tool_call_id),
+                    "content": str(content),
+                })
+            continue
+
+        if role == "assistant":
+            content = getattr(msg, "content", None)
+            if isinstance(msg, dict):
+                content = content or msg.get("content")
+            tool_calls_raw = getattr(msg, "tool_calls", None)
+            if isinstance(msg, dict):
+                tool_calls_raw = tool_calls_raw or msg.get("tool_calls")
+
+            oai_msg: dict[str, Any] = {"role": "assistant"}
+            if content:
+                oai_msg["content"] = str(content)
+            if tool_calls_raw:
+                oai_tcs = []
+                for tc in tool_calls_raw:
+                    tc_id = getattr(tc, "id", None)
+                    fn = getattr(tc, "function", None)
+                    if fn is None and isinstance(tc, dict):
+                        fn_name = tc.get("function", {}).get("name", "")
+                        fn_args = tc.get("function", {}).get("arguments", "")
+                        tc_id = tc_id or tc.get("id", "")
+                    else:
+                        fn_name = getattr(fn, "name", "") if fn else ""
+                        fn_args = getattr(fn, "arguments", "") if fn else ""
+                    if tc_id and fn_name:
+                        oai_tcs.append({
+                            "id": str(tc_id),
+                            "type": "function",
+                            "function": {
+                                "name": str(fn_name),
+                                "arguments": str(fn_args),
+                            },
+                        })
+                if oai_tcs:
+                    oai_msg["tool_calls"] = oai_tcs
+                    if "content" not in oai_msg:
+                        oai_msg["content"] = None
+            else:
+                if "content" not in oai_msg:
+                    oai_msg["content"] = ""
+            oai_msgs.append(oai_msg)
+            continue
+
+        if role in ("user", "system", "developer"):
+            content = getattr(msg, "content", None)
+            if isinstance(msg, dict):
+                content = content or msg.get("content")
+            if content is not None:
+                oai_msgs.append({
+                    "role": role,
+                    "content": str(content),
+                })
+            continue
+
+    return oai_msgs
 
 
-def _extract_set_notes_args(response: Any) -> list[str] | None:
-    """Pull a ``set_notes`` tool call out of a langroid LLMResponse.
+def _extract_set_notes_args(response: Any) -> tuple[list[str] | None, str | None]:
+    """Pull a ``set_notes`` tool call out of an OpenAI ChatCompletionMessage.
 
-    Returns the new notes list when the agent emitted a usable
-    ``set_notes`` call; returns ``None`` otherwise so the caller can
-    fall through to plain-text streaming.
+    Returns ``(notes, tool_call_id)`` when the response contains a
+    ``set_notes`` call; returns ``(None, None)`` otherwise so the caller
+    can fall through to plain-text streaming. The ``tool_call_id`` is
+    needed to build the follow-up ``role: "tool"`` result message.
     """
-    tool_calls = getattr(response, "oai_tool_calls", None) or []
+    tool_calls = getattr(response, "tool_calls", None) or []
     for tc in tool_calls:
         fn = getattr(tc, "function", None)
         name = getattr(fn, "name", None) if fn is not None else None
         if name != "set_notes":
             continue
+        tc_id = getattr(tc, "id", None)
         raw_args = getattr(fn, "arguments", None) if fn is not None else None
         args: Any = raw_args
         if isinstance(raw_args, (str, bytes, bytearray)):
             try:
                 args = json.loads(raw_args)
             except (ValueError, TypeError):
-                return None
+                return None, None
         if isinstance(args, dict):
             notes = args.get("notes")
             if isinstance(notes, list):
-                return [n for n in notes if isinstance(n, str)]
-    return None
+                return [n for n in notes if isinstance(n, str)], tc_id
+    return None, None
 
 
 async def handle_run(request: Request) -> StreamingResponse:
-    """Handle one AG-UI ``/shared-state-read-write`` request."""
+    """Handle one AG-UI ``/shared-state-read-write`` request.
+
+    Uses the OpenAI client directly (not langroid's agent abstraction)
+    so that aimock can fixture-match requests by full message history,
+    including ``hasToolResult`` matching on ``role: "tool"`` messages
+    in the follow-up turn after a ``set_notes`` tool call.
+    """
     error_id = str(uuid.uuid4())
     try:
         body = await request.json()
@@ -291,8 +381,10 @@ async def handle_run(request: Request) -> StreamingResponse:
     if prefs_msg is not None:
         system_message = f"{_SYSTEM_PROMPT}\n\n{prefs_msg}"
 
-    agent = _create_agent(system_message)
-    user_message = _build_conversation(run_input.messages)
+    # Build OpenAI-format messages from the AG-UI message history.
+    oai_messages = _agui_messages_to_openai(
+        run_input.messages or [], system_message
+    )
     thread_id = run_input.thread_id or str(uuid.uuid4())
 
     async def event_stream() -> AsyncGenerator[str, None]:
@@ -318,15 +410,13 @@ async def handle_run(request: Request) -> StreamingResponse:
         )
 
         try:
-            response = await agent.llm_response_async(user_message)
+            response = await _call_openai(
+                oai_messages, [_SET_NOTES_TOOL_SPEC]
+            )
         except Exception as exc:  # noqa: BLE001 — surface as RunError + finish
             logger.exception(
-                "shared-state-read-write: agent.llm_response_async failed"
+                "shared-state-read-write: _call_openai failed"
             )
-            # Emit a RunErrorEvent (the proper AG-UI error primitive) so
-            # the UI can surface a real error state. Streaming the failure
-            # as a TEXT_MESSAGE_CONTENT delta would render the raw JSON
-            # inside a chat bubble, which is the wrong UX.
             yield _sse_line(
                 RunErrorEvent(
                     type=EventType.RUN_ERROR,
@@ -352,14 +442,14 @@ async def handle_run(request: Request) -> StreamingResponse:
             )
             return
 
-        new_notes = _extract_set_notes_args(response)
+        new_notes, oai_tool_call_id = _extract_set_notes_args(response)
 
         if new_notes is not None:
             # The agent decided to update the notes array. Apply, then
             # ack via tool-call events + a fresh STATE_SNAPSHOT so the
             # UI re-renders.
             state["notes"] = new_notes
-            tool_call_id = str(uuid.uuid4())
+            tool_call_id = oai_tool_call_id or str(uuid.uuid4())
             yield _sse_line(
                 ToolCallStartEvent(
                     type=EventType.TOOL_CALL_START,
@@ -387,22 +477,44 @@ async def handle_run(request: Request) -> StreamingResponse:
                 )
             )
 
-            # Re-prompt the agent with the tool result so it produces a
-            # short natural-language acknowledgement to the user. We use
-            # a SEPARATE agent that does NOT have `set_notes` enabled —
-            # otherwise the follow-up turn could call `set_notes` again,
-            # infinite-loop on tool dispatch, or stack tool snapshots.
-            follow_up_agent = _create_agent(
-                system_message, with_set_notes=False
-            )
+            # Build the follow-up message array with the tool result
+            # appended, so aimock can match it with hasToolResult: true.
+            # This mirrors LangGraph's tool execution loop: the assistant
+            # message (with tool_calls) + the tool result message go back
+            # to the LLM for the natural-language acknowledgement.
+            raw_args = getattr(
+                getattr(response.tool_calls[0], "function", None),
+                "arguments", "{}"
+            ) if response.tool_calls else "{}"
+            follow_up_messages = oai_messages + [
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": tool_call_id,
+                            "type": "function",
+                            "function": {
+                                "name": "set_notes",
+                                "arguments": raw_args if isinstance(raw_args, str) else json.dumps(raw_args),
+                            },
+                        }
+                    ],
+                },
+                {
+                    "role": "tool",
+                    "tool_call_id": tool_call_id,
+                    "content": "Notes updated.",
+                },
+            ]
+
+            # Follow-up call WITHOUT tools — we don't want the model to
+            # re-call set_notes in the acknowledgement turn.
             try:
-                follow_up = await follow_up_agent.llm_response_async(
-                    "The set_notes tool succeeded. Briefly confirm to the "
-                    "user what you remembered, in 1 sentence."
-                )
+                follow_up = await _call_openai(follow_up_messages)
             except Exception:  # noqa: BLE001
                 logger.exception(
-                    "shared-state-read-write: follow-up llm_response_async failed"
+                    "shared-state-read-write: follow-up _call_openai failed"
                 )
                 follow_up = None
             if follow_up is not None:
