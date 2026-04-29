@@ -104,7 +104,7 @@ Three fixtures are served, fetched remotely at container boot:
 
 - D5 fixture bundle: <https://raw.githubusercontent.com/CopilotKit/CopilotKit/main/showcase/aimock/d5-all.json>
   — 22 fixtures across 9 fixture files covering all 11 D5 feature types. Bundled
-  from `showcase/ops/fixtures/d5/*.json`. Must load BEFORE feature-parity
+  from `showcase/harness/fixtures/d5/*.json`. Must load BEFORE feature-parity
   to win match precedence (D5 uses specific prompts that overlap with
   feature-parity's broader substring matches).
 - Smoke fixture: <https://raw.githubusercontent.com/CopilotKit/CopilotKit/main/showcase/aimock/smoke.json>
@@ -118,11 +118,11 @@ container on the next Railway restart — aimock fetches fixtures at boot and
 caches to disk. Note the `raw.githubusercontent.com` edge cache is ~5 minutes,
 so propagation after a merge is usually ~5 min + restart latency.
 
-When updating D5 fixtures, edit the individual files in `showcase/ops/fixtures/d5/`,
+When updating D5 fixtures, edit the individual files in `showcase/harness/fixtures/d5/`,
 then re-bundle into `d5-all.json` by running the merge script or manually
 combining the `fixtures` arrays. The bundle must stay in sync.
 
-> **showcase-ops memory budget.** D5 e2e-deep runs up to 4 services x 2
+> **showcase-harness memory budget.** D5 e2e-deep runs up to 4 services x 2
 > features = 8 concurrent Chromium contexts (~2.4 GB peak). If OOM occurs,
 > reduce `FEATURE_CONCURRENCY` in `e2e-deep.ts` or `max_concurrency` in
 > `e2e-deep.yml`.

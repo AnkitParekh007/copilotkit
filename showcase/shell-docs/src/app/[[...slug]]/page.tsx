@@ -23,12 +23,7 @@ function DocsOverview() {
     <div className="flex" style={{ height: "calc(100vh - 53px)" }}>
       <SidebarNav className="w-[240px] shrink-0 border-r border-[var(--border)] bg-[var(--bg)] overflow-y-auto p-4">
         <SidebarFrameworkSelector />
-        <Link
-          href="/"
-          className="block text-xs font-mono uppercase tracking-widest text-[var(--accent)] mb-4"
-        >
-          CopilotKit Docs
-        </Link>
+        <div className="mb-4" />
         {navTree.map((node) => (
           <OverviewNavItem key={nodeKey(node)} node={node} />
         ))}
@@ -145,7 +140,6 @@ function OverviewNavItem({
       <div style={{ paddingLeft: `${indent}px` }}>
         <SidebarLink
           slug={node.slug}
-          hideWhenUnscoped={node.slug === "quickstart"}
           className="block py-[5px] text-[13px] text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition-colors"
         >
           {node.title}

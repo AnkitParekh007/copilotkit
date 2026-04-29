@@ -364,6 +364,22 @@
     },
     {
       "match": {
+        "userMessage": "this PDF"
+      },
+      "response": {
+        "content": "The attached PDF is the CopilotKit Quickstart guide. It walks through three steps: install `@copilotkit/react-core` and `@copilotkit/react-ui`, wrap your app in a `<CopilotKit runtimeUrl=\"/api/copilotkit\">` provider, and drop a `<CopilotChat />` wherever you want the assistant to appear."
+      }
+    },
+    {
+      "match": {
+        "userMessage": "this image"
+      },
+      "response": {
+        "content": "The attached image is the CopilotKit logo — a clean, geometric mark used across CopilotKit branding."
+      }
+    },
+    {
+      "match": {
         "userMessage": "hi"
       },
       "response": {

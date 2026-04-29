@@ -674,11 +674,33 @@ export const docsComponents = {
   CopilotRuntime: ({ children }: { children?: React.ReactNode }) => (
     <div>{children}</div>
   ),
-  Image: ({ src, alt }: Record<string, unknown>) => (
+  // <Image> honours className/width/height so MDX-side authors can
+  // swap light/dark variants via Tailwind's `block dark:hidden` /
+  // `hidden dark:block` pattern. The previous shape destructured only
+  // `src`/`alt` and silently dropped className, so every page that
+  // ships dual diagrams (agentic-protocols, ag-ui, a2a, mcp, etc.)
+  // rendered both versions stacked — the user-visible "duplicate
+  // image" reports.
+  Image: ({
+    src,
+    alt,
+    className,
+    width,
+    height,
+  }: {
+    src?: string;
+    alt?: string;
+    className?: string;
+    width?: number | string;
+    height?: number | string;
+  }) => (
     // eslint-disable-next-line @next/next/no-img-element
     <img
-      src={src as string}
-      alt={(alt as string) || ""}
+      src={src ?? ""}
+      alt={alt ?? ""}
+      width={width}
+      height={height}
+      className={className}
       style={{ borderRadius: "0.5rem", maxWidth: "100%", marginBottom: "1rem" }}
     />
   ),

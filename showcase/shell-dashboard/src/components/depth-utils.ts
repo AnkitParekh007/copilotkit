@@ -73,7 +73,7 @@ export function deriveDepth(
   achieved = 2;
 
   // D3: e2e:<slug>/<featureId> green (per-cell)
-  // Starter cells have null feature — skip D3, cap at D2.
+  // Guard: skip D3 if feature is null (no per-cell e2e to evaluate).
   if (cell.feature === null) {
     return { achieved, isRegression: achieved < cell.max_depth };
   }

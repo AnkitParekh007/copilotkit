@@ -337,42 +337,6 @@ describe("CellMatrix", () => {
     expect(queryByText("Authentication")).toBeNull();
   });
 
-  it("skips starter cells (feature===null) without orphaning the cell index", () => {
-    // A starter cell has `feature: null`. It should be safely ignored by the
-    // matrix (no row to render) and must not pollute the cell-index with
-    // "<slug>/null" keys.
-    const starterCell: CatalogCell = {
-      id: "lgp/__starter",
-      integration: "lgp",
-      integration_name: "LangGraph Python",
-      feature: null,
-      feature_name: null,
-      status: "wired",
-      max_depth: 0,
-      category: null,
-      category_name: null,
-    };
-    const { getAllByTestId, queryByText } = render(
-      <CellMatrix
-        cells={[...cells, starterCell]}
-        categories={categories}
-        features={features}
-        integrations={integrations}
-        liveStatus={new Map()}
-        defaultOpenCategories={new Set(["chat-ui", "platform"])}
-        filter="all"
-        referenceSlug="lgp"
-      />,
-    );
-    // Only the 4 (feature × integration) chips render — the starter cell
-    // does not produce an additional chip and does not collide with any
-    // existing key.
-    const depthChips = getAllByTestId("depth-chip");
-    expect(depthChips.length).toBe(4);
-    // No spurious "null" leak in the rendered output
-    expect(queryByText(/\bnull\b/)).toBeNull();
-  });
-
   it("filters to show only reference integration when filter=reference", () => {
     const { getAllByTestId } = render(
       <CellMatrix

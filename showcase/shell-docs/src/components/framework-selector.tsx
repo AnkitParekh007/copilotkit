@@ -72,7 +72,7 @@ export function FrameworkSelector({
 }: FrameworkSelectorProps) {
   const router = useRouter();
   const pathname = usePathname() ?? "";
-  const { framework, storedFramework, knownFrameworks, setStoredFramework } =
+  const { effectiveFramework, knownFrameworks, setStoredFramework } =
     useFramework();
   const [open, setOpen] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -107,14 +107,22 @@ export function FrameworkSelector({
     };
   }, [open]);
 
-  // Display the URL-derived framework when present; fall back to the
-  // stored choice so unscoped pages (/, /quickstart, etc.) still show
-  // the user's last pick instead of resetting to the placeholder. Same
-  // precedence used by the Clear-Selection button below (line ~262).
-  const current = options.find(
-    (o) => o.slug === (framework ?? storedFramework),
-  );
-  const label = current?.name ?? "Pick an agentic backend";
+  // Display whatever the page is currently rendering as: URL framework
+  // when present, then stored choice, then the soft-default
+  // (Built-in Agent). The selector should never read "Pick a backend"
+  // when the docs are actually rendering BIA code — that's misleading.
+  const current = options.find((o) => o.slug === effectiveFramework);
+
+  // BIA is the soft-default and the framing on the sidebar is "you're
+  // reading CopilotKit's docs" rather than "you've picked the Built-in
+  // Agent backend." Show "CopilotKit" in the sidebar selector chrome
+  // (closed pill + dropdown row) but keep the registry name elsewhere
+  // so DocsLandingNext, IntegrationGrid, etc. still call it Built-in
+  // Agent where the framing is about choosing a backend.
+  const isSidebar = variant === "sidebar";
+  const displayNameFor = (opt: FrameworkOption) =>
+    isSidebar && opt.slug === "built-in-agent" ? "CopilotKit" : opt.name;
+  const label = current ? displayNameFor(current) : "Pick an agentic backend";
 
   // Compute the target href for a given framework option given the current
   // path. Preserves feature slug when possible.
@@ -155,11 +163,19 @@ export function FrameworkSelector({
   for (const cat of categoryOrder) grouped.set(cat.id, []);
   grouped.set("other", []);
   for (const opt of options) {
+    // Sidebar variant lifts BIA out of its category bucket and renders
+    // it at the top of the dropdown — see render path below. Skip it
+    // here so it doesn't also appear under Popular.
+    if (isSidebar && opt.slug === "built-in-agent") continue;
     const bucket = grouped.has(opt.category) ? opt.category : "other";
     grouped.get(bucket)!.push(opt);
   }
 
-  const isSidebar = variant === "sidebar";
+  // BIA pinned at the top of the sidebar dropdown — only the sidebar
+  // variant (the topbar selector keeps the standard category layout).
+  const pinnedBIA = isSidebar
+    ? (options.find((o) => o.slug === "built-in-agent") ?? null)
+    : null;
 
   // Sidebar variant: full-width pill with integration logo on the left,
   // framework name centered, chevron right. Violet accent border when a
@@ -199,7 +215,7 @@ export function FrameworkSelector({
             )}
             <span className="flex-1 min-w-0 text-left">
               {current ? (
-                <span className="block truncate">{current.name}</span>
+                <span className="block truncate">{label}</span>
               ) : (
                 <span className="block truncate text-[var(--text-muted)]">
                   Pick a backend
@@ -265,30 +281,33 @@ export function FrameworkSelector({
               : "absolute top-full left-0 mt-1 w-[340px] max-h-[70vh] overflow-y-auto rounded-lg border border-[var(--border)] bg-[var(--bg-surface)] shadow-lg z-50 p-2"
           }
         >
-          {(framework || storedFramework) && (
-            <button
-              type="button"
-              className="w-full text-left px-2 py-1.5 text-[11px] text-[var(--text-muted)] hover:text-[var(--text)] cursor-pointer"
-              onClick={() => {
-                setStoredFramework(null);
-                // If we're on a framework-scoped route, flip back to the
-                // equivalent `/docs/<feature>` page. On `/docs/*` and
-                // other non-scoped routes, clearing a stale stored pick
-                // is purely a preference change — no navigation needed,
-                // which is why the escape hatch is reachable even when
-                // `framework` is null.
-                const frameworkTail = stripFrameworkPrefix(
-                  pathname,
-                  knownFrameworks,
-                );
-                if (frameworkTail !== null) {
-                  router.replace(frameworkTail ? `/${frameworkTail}` : "/");
-                }
-                setOpen(false);
-              }}
-            >
-              Clear selection
-            </button>
+          {pinnedBIA && (
+            <div className="mb-2">
+              <button
+                key={pinnedBIA.slug}
+                type="button"
+                onClick={() => selectFramework(pinnedBIA.slug)}
+                className={`w-full flex items-center gap-2 px-2 py-1.5 rounded text-[13px] transition-colors cursor-pointer ${
+                  pinnedBIA.slug === effectiveFramework
+                    ? "bg-[var(--accent-light)] text-[var(--accent)]"
+                    : "text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text)]"
+                }`}
+              >
+                {pinnedBIA.logo ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={pinnedBIA.logo}
+                    alt=""
+                    className="w-4 h-4 shrink-0"
+                  />
+                ) : (
+                  <span className="w-4 h-4 shrink-0" />
+                )}
+                <span className="flex-1 text-left truncate">
+                  {displayNameFor(pinnedBIA)}
+                </span>
+              </button>
+            </div>
           )}
 
           {[...grouped.entries()].map(([catId, opts]) => {
@@ -302,7 +321,7 @@ export function FrameworkSelector({
                   {catLabel}
                 </div>
                 {opts.map((opt) => {
-                  const isActive = opt.slug === framework;
+                  const isActive = opt.slug === effectiveFramework;
                   return (
                     <button
                       key={opt.slug}
@@ -325,7 +344,7 @@ export function FrameworkSelector({
                         <span className="w-4 h-4 shrink-0" />
                       )}
                       <span className="flex-1 text-left truncate">
-                        {opt.name}
+                        {displayNameFor(opt)}
                       </span>
                     </button>
                   );

@@ -424,9 +424,9 @@ describe("useLiveStatus", () => {
     expect(result.current.rows).toHaveLength(350);
   });
 
-  it("INITIAL_CAP: truncates to 500 when collection is larger (C5 F20)", async () => {
-    // 600 rows: exceeds cap. We expect exactly 500.
-    mockState.initial = Array.from({ length: 600 }, (_, i) => ({
+  it("INITIAL_CAP: truncates to 2000 when collection is larger (C5 F20)", async () => {
+    // 2100 rows: exceeds cap. We expect exactly 2000.
+    mockState.initial = Array.from({ length: 2100 }, (_, i) => ({
       id: `r${i}`,
       key: `smoke:int/f${i}`,
       dimension: "smoke",
@@ -439,7 +439,7 @@ describe("useLiveStatus", () => {
     }));
     const { result } = renderHook(() => useLiveStatus("smoke"));
     await waitFor(() => expect(result.current.status).toBe("live"));
-    expect(result.current.rows).toHaveLength(500);
+    expect(result.current.rows).toHaveLength(2000);
   });
 
   it("unmount during pending subscribe() resolves cleanly (HF-C1)", async () => {

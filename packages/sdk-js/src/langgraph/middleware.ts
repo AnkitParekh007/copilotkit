@@ -2,6 +2,104 @@ import { createMiddleware, AIMessage, SystemMessage } from "langchain";
 import type { InteropZodObject } from "@langchain/core/utils/types";
 import * as z from "zod";
 
+/**
+ * Internal/framework state keys that should never be auto-surfaced to the
+ * LLM as user-facing state. These are reducer-managed message buckets,
+ * CopilotKit/AG-UI plumbing, or graph-internal scaffolding.
+ */
+const RESERVED_STATE_KEYS: ReadonlySet<string> = new Set([
+  "messages",
+  "copilotkit",
+  "ag-ui",
+  "tools",
+  "structured_response",
+  "thread_id",
+  "remaining_steps",
+]);
+
+/**
+ * Controls how user-defined state keys are surfaced into the LLM prompt
+ * on every model call. Off by default to avoid leaking arbitrary state
+ * into prompts; opt in explicitly.
+ *
+ * - `false` (default) — never surface state.
+ * - `true` — every state key not in the reserved internal set and not
+ *   prefixed with `_` is JSON-serialized into a "Current agent state:"
+ *   note appended to the system prompt.
+ * - `string[]` — only surface the named keys (use this when you want
+ *   explicit control over what the LLM sees, e.g. `["liked", "todos"]`).
+ */
+export type ExposeStateOption = boolean | readonly string[];
+
+const buildStateNote = (
+  state: Record<string, unknown>,
+  expose: ExposeStateOption,
+): string | null => {
+  if (expose === false) return null;
+
+  const allow: ReadonlySet<string> | null = Array.isArray(expose)
+    ? new Set(expose)
+    : null;
+
+  const snapshot: Record<string, unknown> = {};
+  for (const key of Object.keys(state)) {
+    if (
+      allow
+        ? !allow.has(key)
+        : RESERVED_STATE_KEYS.has(key) || key.startsWith("_")
+    ) {
+      continue;
+    }
+    const value = state[key];
+    if (
+      value === undefined ||
+      value === null ||
+      value === "" ||
+      (Array.isArray(value) && value.length === 0) ||
+      (typeof value === "object" &&
+        !Array.isArray(value) &&
+        Object.keys(value as Record<string, unknown>).length === 0)
+    ) {
+      continue;
+    }
+    snapshot[key] = value;
+  }
+
+  if (Object.keys(snapshot).length === 0) return null;
+
+  let body: string;
+  try {
+    body = JSON.stringify(snapshot, null, 2);
+  } catch {
+    body = String(snapshot);
+  }
+  return `Current agent state:\n${body}`;
+};
+
+const applyStateNote = (request: any, expose: ExposeStateOption): any => {
+  const note = buildStateNote(
+    (request.state ?? {}) as Record<string, unknown>,
+    expose,
+  );
+  if (!note) return request;
+
+  const existing = request.systemPrompt;
+  if (existing == null) {
+    return { ...request, systemPrompt: new SystemMessage({ content: note }) };
+  }
+  // existing may be a string OR a SystemMessage
+  const baseText =
+    typeof existing === "string"
+      ? existing
+      : typeof existing.content === "string"
+        ? existing.content
+        : String(existing.content);
+  return {
+    ...request,
+    systemPrompt: new SystemMessage({ content: `${baseText}\n\n${note}` }),
+  };
+};
+
 const createAppContextBeforeAgent = (state, runtime) => {
   const messages = state.messages;
 
@@ -127,13 +225,14 @@ const copilotKitStateSchema = z.object({
     .optional(),
 });
 
-const middlewareInput = {
+const buildMiddlewareInput = (exposeState: ExposeStateOption) => ({
   name: "CopilotKitMiddleware",
 
   stateSchema: copilotKitStateSchema as unknown as InteropZodObject,
 
-  // Inject frontend tools before model call
-  wrapModelCall: async (request, handler) => {
+  // Inject frontend tools and surface user state before model call
+  wrapModelCall: async (request: any, handler: (req: any) => Promise<any>) => {
+    request = applyStateNote(request, exposeState);
     const frontendTools = request.state["copilotkit"]?.actions ?? [];
 
     if (frontendTools.length === 0) {
@@ -234,9 +333,33 @@ const middlewareInput = {
       },
     };
   },
-} as any;
-const createCopilotKitMiddleware = () => {
-  return createMiddleware(middlewareInput);
+});
+
+/**
+ * Build a CopilotKit middleware instance with custom options.
+ *
+ * Use this when you want to override the default state-exposure behavior
+ * (for example to hide a sensitive key, or to use an explicit allowlist).
+ *
+ * @example
+ * ```typescript
+ * import { createCopilotkitMiddleware } from "@copilotkit/sdk-js/langgraph";
+ *
+ * const middleware = createCopilotkitMiddleware({
+ *   exposeState: ["liked", "todos"],
+ * });
+ * ```
+ */
+export const createCopilotkitMiddleware = (
+  options: { exposeState?: ExposeStateOption } = {},
+) => {
+  const exposeState = options.exposeState ?? false;
+  return createMiddleware(buildMiddlewareInput(exposeState) as any);
 };
 
-export const copilotkitMiddleware = createCopilotKitMiddleware();
+/**
+ * Default CopilotKit middleware singleton — does NOT surface user state
+ * to the LLM. Pass `exposeState: true` (or an allowlist) to
+ * {@link createCopilotkitMiddleware} to opt in.
+ */
+export const copilotkitMiddleware = createCopilotkitMiddleware();

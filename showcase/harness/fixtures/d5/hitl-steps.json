@@ -1,0 +1,28 @@
+{
+  "_comment": "D5 fixture for /demos/hitl — step selection via generate_task_steps frontend tool. Uses toolCallId matching: toolCallId fixture tried first, skips on initial request (no tool result), matches on second request when tool result is present.",
+  "fixtures": [
+    {
+      "match": {
+        "userMessage": "trip to mars",
+        "toolCallId": "call_d5_generate_steps_001"
+      },
+      "response": {
+        "content": "Great choices! I will proceed with executing the selected steps for your trip to Mars. Let me work through each one."
+      }
+    },
+    {
+      "match": {
+        "userMessage": "trip to mars"
+      },
+      "response": {
+        "toolCalls": [
+          {
+            "id": "call_d5_generate_steps_001",
+            "name": "generate_task_steps",
+            "arguments": "{\"steps\":[{\"description\":\"Research Mars mission requirements and timeline\",\"status\":\"enabled\"},{\"description\":\"Design spacecraft and life support systems\",\"status\":\"enabled\"},{\"description\":\"Recruit and train the crew\",\"status\":\"enabled\"},{\"description\":\"Launch and navigate to Mars\",\"status\":\"enabled\"},{\"description\":\"Land and establish base camp\",\"status\":\"enabled\"}]}"
+          }
+        ]
+      }
+    }
+  ]
+}

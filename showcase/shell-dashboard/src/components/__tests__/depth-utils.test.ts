@@ -48,24 +48,6 @@ const cell = (
   category_name: "Dev Ex",
 });
 
-// Starter cells: feature === null. These represent the integration's CLI
-// starter (no feature wired), and the depth ladder caps at D2 because D3
-// (per-cell e2e) is not meaningful without a feature id.
-const starter = (
-  slug: string,
-  status: CatalogCell["status"] = "wired",
-  max_depth: number = 0,
-): CatalogCell => ({
-  id: `${slug}/__starter`,
-  integration: slug,
-  integration_name: slug,
-  feature: null,
-  feature_name: null,
-  status,
-  max_depth,
-  category: null,
-  category_name: null,
-});
 
 describe("deriveDepth", () => {
   it("returns D0 for unshipped cells regardless of live data", () => {
@@ -225,28 +207,4 @@ describe("deriveDepth", () => {
     expect(result.isRegression).toBe(true);
   });
 
-  it("starter cell (feature null) caps at D2 with health+agent green", () => {
-    const c = starter("lgp");
-    const live = mapOf([
-      row("health:lgp", "health", "green"),
-      row("agent:lgp", "agent", "green"),
-    ]);
-    const result = deriveDepth(c, live);
-    expect(result.achieved).toBe(2);
-    expect(result.isRegression).toBe(false);
-  });
-
-  it("starter cell skips D3 even with chat+tools green", () => {
-    const c = starter("lgp");
-    const live = mapOf([
-      row("health:lgp", "health", "green"),
-      row("agent:lgp", "agent", "green"),
-      // Even if these were green they cannot lift a starter past D2 because
-      // D3 (e2e) is not evaluable without a feature id.
-      row("chat:lgp", "chat", "green"),
-      row("tools:lgp", "tools", "green"),
-    ]);
-    const result = deriveDepth(c, live);
-    expect(result.achieved).toBe(2);
-  });
 });

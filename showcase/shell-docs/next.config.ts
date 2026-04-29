@@ -79,6 +79,243 @@ const nextConfig: NextConfig = {
         destination: "/",
         permanent: true,
       },
+
+      // /unselected/* tree retired. Most files were either canonical at
+      // root or duplicated content from `integrations/built-in-agent/`.
+      // Per-path redirects below handle the BIA-canonical mappings; the
+      // catch-all at the bottom funnels everything else to root (where
+      // either the canonical version now lives or the soft-default
+      // serves the right framework view).
+      { source: "/unselected", destination: "/", permanent: true },
+      {
+        source: "/unselected/quickstart",
+        destination: "/built-in-agent/quickstart",
+        permanent: true,
+      },
+      {
+        source: "/unselected/advanced-configuration",
+        destination: "/built-in-agent/advanced-configuration",
+        permanent: true,
+      },
+      {
+        source: "/unselected/mcp-servers",
+        destination: "/built-in-agent/mcp-servers",
+        permanent: true,
+      },
+      {
+        source: "/unselected/model-selection",
+        destination: "/built-in-agent/model-selection",
+        permanent: true,
+      },
+      {
+        source: "/unselected/server-tools",
+        destination: "/built-in-agent/server-tools",
+        permanent: true,
+      },
+      {
+        source: "/unselected/shared-state",
+        destination: "/built-in-agent/shared-state",
+        permanent: true,
+      },
+      {
+        source: "/unselected/generative-ui/mcp-apps",
+        destination: "/built-in-agent/generative-ui/mcp-apps",
+        permanent: true,
+      },
+      // Cat C promotions whose canonical home moved off the unselected
+      // tail (e.g. `unselected/ag-ui` → `backend/ag-ui`).
+      {
+        source: "/unselected/ag-ui",
+        destination: "/backend/ag-ui",
+        permanent: true,
+      },
+      {
+        source: "/unselected/copilot-runtime",
+        destination: "/backend/copilot-runtime",
+        permanent: true,
+      },
+      // troubleshooting/migrate-to-* in unselected → existing
+      // /migrate/* canonical (already redirected at the
+      // /troubleshooting/migrate-to-* level).
+      {
+        source: "/unselected/troubleshooting/migrate-to-v2",
+        destination: "/migrate/v2",
+        permanent: true,
+      },
+      {
+        source: "/unselected/troubleshooting/migrate-to-1.10.X",
+        destination: "/migrate/1.10.X",
+        permanent: true,
+      },
+      {
+        source: "/unselected/troubleshooting/migrate-to-1.8.2",
+        destination: "/migrate/1.8.2",
+        permanent: true,
+      },
+      // Tutorials and interrupt-based moved out of unselected/ to root.
+      {
+        source: "/unselected/tutorials/:path*",
+        destination: "/tutorials/:path*",
+        permanent: true,
+      },
+      // Interrupt-based was a LangGraph-specific page parked in
+      // unselected/. Real homes are
+      // `/<langgraph-slug>/human-in-the-loop/interrupt-flow` (and the
+      // Mastra equivalent). Send anyone landing on the legacy URL to
+      // the framework-agnostic HITL page; soft-default routes them
+      // through to the right framework's interrupt flow if they're
+      // stored as LangGraph or Mastra.
+      {
+        source: "/unselected/generative-ui/your-components/interrupt-based",
+        destination: "/human-in-the-loop",
+        permanent: true,
+      },
+      // agent-app-context was concept-per-framework only; no canonical
+      // root home. Send legacy URLs to `/` rather than 404 — readers
+      // who stored the old link will land on docs and can navigate.
+      {
+        source: "/unselected/agent-app-context",
+        destination: "/",
+        permanent: true,
+      },
+      // Catch-all: any remaining /unselected/* path lands on its
+      // canonical root equivalent (Cat A files: coding-agents,
+      // custom-look-and-feel/*, frontend-tools, etc.).
+      {
+        source: "/unselected/:path*",
+        destination: "/:path*",
+        permanent: true,
+      },
+
+      // /learn/* tree retired. The seven explanation-tier pages were
+      // promoted into the Concepts subgroup, the multi-conversation
+      // tutorial moved to /tutorials/, the open-json-ui page moved to
+      // /generative-ui/, and the What's New tree became its own
+      // top-level section. Redirects below funnel old URLs to the
+      // canonical homes.
+      {
+        source: "/learn",
+        destination: "/concepts/architecture",
+        permanent: true,
+      },
+      {
+        source: "/learn/architecture",
+        destination: "/concepts/architecture",
+        permanent: true,
+      },
+      {
+        source: "/learn/threads",
+        destination: "/premium/threads-explained",
+        permanent: true,
+      },
+      {
+        source: "/learn/intelligence-platform",
+        destination: "/premium/intelligence-platform",
+        permanent: true,
+      },
+      {
+        source: "/learn/agentic-protocols",
+        destination: "/agentic-protocols",
+        permanent: true,
+      },
+      {
+        source: "/learn/ag-ui-protocol",
+        destination: "/agentic-protocols/ag-ui",
+        permanent: true,
+      },
+      {
+        source: "/learn/a2a-protocol",
+        destination: "/agentic-protocols/a2a",
+        permanent: true,
+      },
+      {
+        source: "/learn/connect-mcp-servers",
+        destination: "/agentic-protocols/mcp",
+        permanent: true,
+      },
+      {
+        source: "/learn/generative-ui",
+        destination: "/concepts/generative-ui-overview",
+        permanent: true,
+      },
+      {
+        source: "/learn/generative-ui/specs/open-json-ui",
+        destination: "/generative-ui/open-json-ui",
+        permanent: true,
+      },
+      {
+        source: "/learn/generative-ui/specs/a2ui",
+        destination: "/generative-ui/a2ui",
+        permanent: true,
+      },
+      {
+        source: "/learn/generative-ui/specs/mcp-apps",
+        destination: "/generative-ui/mcp-apps",
+        permanent: true,
+      },
+      {
+        source: "/learn/generative-ui/specs",
+        destination: "/concepts/generative-ui-overview",
+        permanent: true,
+      },
+      {
+        source: "/learn/tutorials/multi-conversation-chat",
+        destination: "/tutorials/multi-conversation-chat",
+        permanent: true,
+      },
+      {
+        source: "/learn/whats-new/:path*",
+        destination: "/whats-new/:path*",
+        permanent: true,
+      },
+      {
+        source: "/learn/whats-new",
+        destination: "/whats-new",
+        permanent: true,
+      },
+
+      // Concepts subgroup tightened: protocol pages moved into a new
+      // /agentic-protocols/ section under Get Started, the
+      // Intelligence Platform + Threads explanation pages moved to
+      // Enterprise (/premium/), and three-types-of-gen-ui merged into
+      // /concepts/generative-ui-overview. Per-path redirects below
+      // catch URLs that were live in the brief window between the
+      // first /learn/ consolidation pass and this restructure.
+      {
+        source: "/concepts/agentic-protocols",
+        destination: "/agentic-protocols",
+        permanent: true,
+      },
+      {
+        source: "/concepts/ag-ui-protocol",
+        destination: "/agentic-protocols/ag-ui",
+        permanent: true,
+      },
+      {
+        source: "/concepts/mcp-servers",
+        destination: "/agentic-protocols/mcp",
+        permanent: true,
+      },
+      {
+        source: "/concepts/a2a-protocol",
+        destination: "/agentic-protocols/a2a",
+        permanent: true,
+      },
+      {
+        source: "/concepts/intelligence-platform",
+        destination: "/premium/intelligence-platform",
+        permanent: true,
+      },
+      {
+        source: "/concepts/threads",
+        destination: "/premium/threads-explained",
+        permanent: true,
+      },
+      {
+        source: "/concepts/three-types-of-gen-ui",
+        destination: "/concepts/generative-ui-overview",
+        permanent: true,
+      },
     ];
   },
 };

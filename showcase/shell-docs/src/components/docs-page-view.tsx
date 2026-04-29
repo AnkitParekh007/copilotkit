@@ -19,7 +19,7 @@ import { Snippet } from "@/components/snippet";
 import { DocsToc } from "@/components/docs-toc";
 import { Tabs as DocsTabs } from "@/components/docs-tabs";
 import { docsComponents } from "@/lib/mdx-registry";
-import { getTabDefault } from "@/lib/registry";
+import { getIntegration, getTabDefault } from "@/lib/registry";
 import {
   NavNode,
   buildBreadcrumbs,
@@ -50,10 +50,6 @@ export interface DocsPageViewProps {
   slugHrefPrefix: string;
   /** Optional framework slug to thread into <Snippet> as a default. */
   frameworkOverride?: string | null;
-  /** Label for the sidebar's root link. */
-  sidebarTitle?: string;
-  /** Optional "back" link shown above the sidebar title. */
-  backLink?: { label: string; href: string } | null;
   /** Pre-built nav tree. When omitted, defaults to the full docs tree. */
   navTree?: NavNode[];
   /** Banner slot rendered above the main content column. */
@@ -74,8 +70,6 @@ export async function DocsPageView({
   contentSlugPath,
   slugHrefPrefix,
   frameworkOverride,
-  sidebarTitle = "CopilotKit Docs",
-  backLink = null,
   navTree,
   bannerSlot,
   hideBody = false,
@@ -109,8 +103,15 @@ export async function DocsPageView({
   const defaultCell = doc.fm.defaultCell;
 
   const tree = navTree ?? buildNavTree(CONTENT_DIR);
+  // Breadcrumb root label tracks the framework whose content is being
+  // rendered. On framework-scoped pages this reads "LangGraph (Python)";
+  // on unscoped pages it falls back to "Docs". The sidebar no longer
+  // surfaces this label as a separate link — the selector pill at the
+  // top of the sidebar already names the framework.
+  const rootLabel =
+    (frameworkOverride && getIntegration(frameworkOverride)?.name) || "Docs";
   const breadcrumbs = buildBreadcrumbs(slugPath, {
-    rootLabel: sidebarTitle,
+    rootLabel,
     rootHref: slugHrefPrefix || "/",
     slugHrefPrefix,
   });
@@ -140,7 +141,6 @@ export async function DocsPageView({
             scope={scope}
             fallbackHref={`${slugHrefPrefix}/${node.slug}`}
             active={isActive}
-            hideWhenUnscoped={node.slug === "quickstart"}
             className={`block py-[5px] text-[13px] transition-colors ${
               isActive
                 ? "text-[var(--accent)] font-medium"
@@ -171,20 +171,7 @@ export async function DocsPageView({
     <div className="flex" style={{ height: "calc(100vh - 53px)" }}>
       <SidebarNav className="w-[240px] shrink-0 border-r border-[var(--border)] bg-[var(--bg)] overflow-y-auto p-4">
         <SidebarFrameworkSelector />
-        {backLink && (
-          <Link
-            href={backLink.href}
-            className="block text-xs text-[var(--text-muted)] hover:text-[var(--text-secondary)] mb-3 transition-colors"
-          >
-            {backLink.label}
-          </Link>
-        )}
-        <Link
-          href={slugHrefPrefix || "/"}
-          className="block text-xs font-mono uppercase tracking-widest text-[var(--accent)] mb-4"
-        >
-          {sidebarTitle}
-        </Link>
+        <div className="mb-4" />
         {tree.map((node) => renderNavItem(node))}
       </SidebarNav>
 

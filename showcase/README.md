@@ -6,7 +6,7 @@ Per-framework demos of CopilotKit (LangGraph, CrewAI, Mastra, Claude Agent SDK, 
 
 ```
 showcase/
-  packages/<slug>/              # one per framework (17 total) — Dockerfile, src/app/demos/*/, src/agents/ or equivalent
+  integrations/<slug>/              # one per framework (17 total) — Dockerfile, src/app/demos/*/, src/agents/ or equivalent
   shell/                        # hub: home page, /matrix, canonical /integrations/[slug]/[demo]/{preview,code}
   shell-dashboard/              # internal-only feature × integration grid (port 3002)
   shared/
@@ -28,14 +28,14 @@ The shell apps consume JSON data files that are **generated at build time** by
 scripts in `scripts/`. These files are gitignored — every build path (Docker,
 CI, `npm run build`, `npm run dev`) regenerates them automatically.
 
-| File                   | Generator                   | Shell apps                                     | What it does                                                                                                              |
-| ---------------------- | --------------------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `registry.json`        | `generate-registry.ts`      | shell, shell-docs, shell-dojo, shell-dashboard | Integration manifest — scans `packages/*/manifest.yaml`, builds the full catalog with metadata, feature flags, categories |
-| `demo-content.json`    | `bundle-demo-content.ts`    | shell, shell-docs, shell-dojo                  | Bundled source code from every demo directory — powers the Code tab, Snippet components, dojo cell viewer                 |
-| `constraints.json`     | `generate-registry.ts`      | shell                                          | Filter facets for the integration explorer (categories, frameworks, features)                                             |
-| `search-index.json`    | `generate-search-index.ts`  | shell, shell-docs                              | Cmd-K search entries — scans MDX docs, AG-UI content, and registry data                                                   |
-| `starter-content.json` | `bundle-starter-content.ts` | shell                                          | Starter template source bundles for the "Get Started" code viewer                                                         |
-| `docs-status.json`     | `probe-docs.ts`             | shell-dashboard                                | Per-feature docs reachability — HTTP HEAD on og_docs_url, file-exists check on shell-docs MDX                             |
+| File                   | Generator                   | Shell apps                                     | What it does                                                                                                                  |
+| ---------------------- | --------------------------- | ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `registry.json`        | `generate-registry.ts`      | shell, shell-docs, shell-dojo, shell-dashboard | Integration manifest — scans `integrations/*/manifest.yaml`, builds the full catalog with metadata, feature flags, categories |
+| `demo-content.json`    | `bundle-demo-content.ts`    | shell, shell-docs, shell-dojo                  | Bundled source code from every demo directory — powers the Code tab, Snippet components, dojo cell viewer                     |
+| `constraints.json`     | `generate-registry.ts`      | shell                                          | Filter facets for the integration explorer (categories, frameworks, features)                                                 |
+| `search-index.json`    | `generate-search-index.ts`  | shell, shell-docs                              | Cmd-K search entries — scans MDX docs, AG-UI content, and registry data                                                       |
+| `starter-content.json` | `bundle-starter-content.ts` | shell                                          | Starter template source bundles for the "Get Started" code viewer                                                             |
+| `docs-status.json`     | `probe-docs.ts`             | shell-dashboard                                | Per-feature docs reachability — HTTP HEAD on og_docs_url, file-exists check on shell-docs MDX                                 |
 
 Each generator writes to the `src/data/` directory of every shell app that
 consumes it. Shell apps are independent — no shell cross-imports another
@@ -87,9 +87,104 @@ cp showcase/.env.example showcase/.env
 
 Only `OPENAI_API_KEY` is strictly required. Missing optional keys fail gracefully (per-package).
 
-## Local Docker workflow
+## Local CLI — parity testing without Railway
 
-`scripts/dev-local.sh` wraps `docker compose` and handles the `shared_python/` / `shared_typescript/` staging step that CI also performs.
+The showcase harness includes a CLI that runs the same probe drivers (liveness, D4, D5) used in CI/Railway against local Docker Compose containers. This lets you debug Dn failures, iterate on new demos, or run background parity checks without pushing to a branch.
+
+### Quick start
+
+```sh
+# runs from any directory — all paths are resolved relative to the script itself
+
+# 1. Make sure Docker is running (Colima, Docker Desktop, or OrbStack)
+
+# 2. Start infra + one integration
+./showcase/bin/showcase up langgraph-python
+
+# 3. Run smoke probes
+./showcase/bin/showcase test langgraph-python --smoke
+
+# 4. Run full D5 depth
+./showcase/bin/showcase test langgraph-python --d5 --headed
+
+# 5. Tear down when done
+./showcase/bin/showcase down
+```
+
+### Commands
+
+| Command              | Description                                                                                      |
+| -------------------- | ------------------------------------------------------------------------------------------------ |
+| `test <target>`      | Run probes. Target is a slug (`langgraph-python`), slug:demo (`langgraph-python:chat`), or `all` |
+| `up [slugs...]`      | Start infra (aimock, pocketbase, dashboard) + named packages. No args = infra only               |
+| `down [slugs...]`    | Stop services. No args = stop everything                                                         |
+| `rebuild [slugs...]` | Rebuild Docker images                                                                            |
+| `ps`                 | Show running services                                                                            |
+| `logs <slug>`        | Tail logs for a service                                                                          |
+| `status`             | Print dashboard URL for full results                                                             |
+
+### Test levels
+
+Specify depth with `--level` or shorthand flags (mutually exclusive):
+
+| Flag          | Level | What it runs                                                                               |
+| ------------- | ----- | ------------------------------------------------------------------------------------------ |
+| `--smoke`     | smoke | Liveness healthchecks (L1–L3) — container up, routes reachable, no JS errors               |
+| `--d4`        | d4    | E2E chat-tools — Playwright drives the demo UI, sends a message, asserts tool calls render |
+| `--d5`        | d5    | E2E deep — full conversation flow with aimock fixtures, asserts feature-specific behavior  |
+| `--level all` | all   | Runs smoke → d4 → d5 sequentially                                                          |
+
+Default level is `smoke` when no flag is given.
+
+### Additional options
+
+| Option         | Description                                                                 |
+| -------------- | --------------------------------------------------------------------------- |
+| `--headed`     | Run Playwright visibly (not headless) — useful for debugging D4/D5 failures |
+| `--verbose`    | Verbose logging output                                                      |
+| `--repeat <n>` | Run the test suite N times (flake detection)                                |
+| `--keep`       | Don't stop auto-started containers after the test finishes                  |
+| `--live`       | Write results to PocketBase so the dashboard reflects them                  |
+| `--rebuild`    | Force Docker rebuild before running tests                                   |
+
+### Config file (optional)
+
+Create `showcase/showcase.local.json` to override defaults:
+
+```json
+{
+  "pocketbase": {
+    "url": "http://localhost:8090",
+    "email": "admin@localhost",
+    "password": "showcase-local-dev"
+  },
+  "dashboardUrl": "http://localhost:3200"
+}
+```
+
+The CLI works without this file — it uses sensible defaults matching docker-compose.local.yml.
+
+### How it works
+
+The CLI reuses the same probe drivers that the showcase-harness service runs on Railway. The difference is infrastructure: Railway probes hit Railway-deployed containers; the CLI probes hit local Docker Compose containers. Same assertions, same aimock fixtures, same Playwright flows.
+
+```
+┌─────────┐     ┌──────────────────┐     ┌─────────────────────┐
+│  CLI    │────▸│  Probe Drivers   │────▸│  Docker Compose     │
+│  cli.ts │     │  liveness/d4/d5  │     │  containers         │
+└─────────┘     └──────────────────┘     │  (aimock + integs)  │
+                                         └─────────────────────┘
+```
+
+### Use cases
+
+1. **Debugging Dn failures** — reproduce a CI/Railway failure locally with `--d5 --headed` to watch Playwright step through the flow
+2. **Building new demos** — `up` the integration, iterate on code, `test --d4` to verify, repeat
+3. **Background automation** — `test all --level all --repeat 3` as a pre-push sanity check
+
+## Low-level Docker Compose workflow
+
+For manual container management without the CLI, `scripts/dev-local.sh` wraps `docker compose` and handles the `shared_python/` / `shared_typescript/` staging step that CI also performs.
 
 ```sh
 # from the repo root
@@ -143,7 +238,7 @@ Column ordering lives in `shell-dashboard/src/lib/sort-order.ts` — internal to
 
 ## Iterating on a demo
 
-1. Edit the demo in `packages/<slug>/src/app/demos/<demo-id>/page.tsx` (and the backend under `src/agents/` if applicable).
+1. Edit the demo in `integrations/<slug>/src/app/demos/<demo-id>/page.tsx` (and the backend under `src/agents/` if applicable).
 2. Rebundle so `/code` in `shell` reflects the edit: `cd showcase && npx tsx scripts/bundle-demo-content.ts`.
 3. If you changed `manifest.yaml` or added a feature to `shared/feature-registry.json`: `npx tsx scripts/generate-registry.ts`.
 4. Rebuild + restart the container: `./scripts/dev-local.sh up <slug>`.
@@ -162,6 +257,17 @@ The dashboard at [showcase.copilotkit.ai](https://showcase.copilotkit.ai) reads 
 1. **Static `catalog.json`** — generated at build time by `pnpm generate-registry`. Contains the full 38-feature x 17-integration cell matrix with status (`wired` / `stub` / `unshipped`), parity tiers, and feature categories. Changes require a generator run + commit.
 2. **Live PocketBase probe results** — streamed via SSE. Probes discover demo routes automatically and update the dashboard in real time. No manual intervention needed for probe data.
 
+**Known limitation — PocketBase fetch cap:** `useLiveStatus.ts` fetches
+status records with a hard `INITIAL_CAP` (currently 2000). PocketBase
+returns records in rowid (creation) order. If the total record count
+exceeds the cap, later-created dimensions (e.g. `e2e:<slug>/<featureId>`
+per-cell records from the 6-hourly e2e-demos probe) get silently
+truncated, causing the dashboard to show D2 instead of D4 across the
+board. If new probe types are added and the dashboard regresses to D2,
+raise `INITIAL_CAP` in `shell-dashboard/src/hooks/useLiveStatus.ts`.
+The correct long-term fix is dimension-scoped fetching or `sort=-updated`
+so the cap never silently drops functional records.
+
 Key invariants:
 
 - **Parity tiers are never manually set.** They are computed by comparing each integration's wired feature set against the reference integration's.
@@ -171,7 +277,7 @@ Key invariants:
 
 ### SOP 1: Wire a new demo on an existing integration
 
-1. Edit `showcase/packages/<slug>/manifest.yaml` — add the feature to `features[]` and a corresponding `demos[]` entry with a `route`.
+1. Edit `showcase/integrations/<slug>/manifest.yaml` — add the feature to `features[]` and a corresponding `demos[]` entry with a `route`.
 2. Run `pnpm generate-registry` — updates `registry.json` AND `catalog.json`. The cell flips from `unshipped` to `wired`. Parity tiers auto-recompute.
 3. Commit the manifest + both generated files. PR, merge.
 4. CI rebuilds the package image + dashboard image. Railway auto-deploys both.
@@ -179,14 +285,14 @@ Key invariants:
 
 ### SOP 2: Code fix on an existing demo (no manifest change)
 
-1. Edit code under `showcase/packages/<slug>/src/...`.
+1. Edit code under `showcase/integrations/<slug>/src/...`.
 2. PR, merge. No generator run needed (manifest unchanged).
 3. CI rebuilds the package image. Railway auto-deploys.
 4. Probes re-probe on the next tick. If the fix turns a red cell green, the dashboard updates live. Zero manual steps beyond the normal PR workflow.
 
 ### SOP 3: Add a brand-new integration
 
-1. Create `showcase/packages/<new-slug>/manifest.yaml` with `features[]` + `demos[]`.
+1. Create `showcase/integrations/<new-slug>/manifest.yaml` with `features[]` + `demos[]`.
 2. Add `{"slug": "<new-slug>", "name": "<Display Name>"}` to `showcase/shared/packages.json`.
 3. Provision a Railway service (manual: `railway service create` or Dashboard UI).
 4. Run `pnpm generate-registry` — catalog gains 38 new cells (mostly `unshipped`, some `wired`). Parity tier computed automatically.

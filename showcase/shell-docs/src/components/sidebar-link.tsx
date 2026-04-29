@@ -1,13 +1,10 @@
 "use client";
 
-// SidebarLink — framework-aware client-side anchor used for every
-// entry in the docs sidebar. Resolves its final href based on the
-// active FrameworkContext: when a framework is selected, the href is
-// `/<framework>/<slug>`; otherwise it falls through to `/<slug>`.
-//
-// `framework` is URL-derived (see framework-provider) so the resolved
-// href is identical during SSR and post-hydration — no transient
-// fallback path needed.
+// SidebarLink — framework-aware client-side anchor used for every entry
+// in the docs sidebar. Resolves its final href against
+// `effectiveFramework`, which falls through URL → stored → default
+// (Built-in Agent), so every sidebar click lands on a real
+// `/<framework>/<slug>` URL.
 
 import React from "react";
 import Link from "next/link";
@@ -34,14 +31,6 @@ export interface SidebarLinkProps {
    * interface for call-site compatibility.
    */
   fallbackHref?: string;
-  /**
-   * When true, the link does not render unless a framework is active
-   * (URL-scoped) or stored in localStorage. Used for sidebar entries
-   * whose root MDX is a routing shim — e.g. Quickstart, whose real
-   * content lives per-framework. Without this, the entry shows on `/`
-   * but clicks land on the shim page.
-   */
-  hideWhenUnscoped?: boolean;
 }
 
 export function SidebarLink({
@@ -51,18 +40,9 @@ export function SidebarLink({
   active,
   scope: _scope,
   fallbackHref: _fallbackHref,
-  hideWhenUnscoped,
 }: SidebarLinkProps) {
-  const { framework, storedFramework } = useFramework();
-
-  // Prefer URL-active framework, then stored preference, then bare slug.
-  // Using storedFramework here means sidebar links on unscoped pages (like
-  // the root overview) navigate directly to the framework-scoped URL —
-  // avoiding the visible RouterPivot redirect that would otherwise flicker
-  // in the URL bar.
-  const activeFramework = framework ?? storedFramework;
-  if (hideWhenUnscoped && !activeFramework) return null;
-  const href = activeFramework ? `/${activeFramework}/${slug}` : `/${slug}`;
+  const { effectiveFramework } = useFramework();
+  const href = `/${effectiveFramework}/${slug}`;
 
   return (
     <Link

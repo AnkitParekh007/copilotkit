@@ -62,13 +62,19 @@ export function escapeHtml(s: string): string {
 // Process-scoped memoization for frequently-called filesystem readers.
 // buildNavTree walks the entire content tree on every page render and
 // calls readTitle / readMeta O(pages) times per request. Without this
-// cache each call reopens and re-parses the file from disk. We accept
-// stale-during-process semantics: the cache lives for the life of the
-// Node process, which matches Next.js build-time and server runtime
-// lifetimes. Caches are keyed by absolute path.
+// cache each call reopens and re-parses the file from disk.
 //
-// Memory footprint: titles are tiny strings, meta is a small JSON
-// object — negligible even with hundreds of docs files.
+// Production / build: cache the entire process lifetime — content is
+// frozen at deploy time so stale reads aren't possible.
+//
+// Development: skip the cache so meta.json / frontmatter edits show up
+// in the sidebar nav without restarting the dev server. The
+// performance hit is acceptable for local dev (the request path
+// already does plenty of fs work for MDX rendering).
+//
+// Memory footprint in production: titles are tiny strings, meta is a
+// small JSON object — negligible even with hundreds of docs files.
+const isDev = process.env.NODE_ENV === "development";
 const titleCache = new Map<string, string | null>();
 const metaCache = new Map<
   string,
@@ -77,7 +83,7 @@ const metaCache = new Map<
 
 export function readTitle(filePath: string): string | null {
   const cacheKey = path.resolve(filePath);
-  if (titleCache.has(cacheKey)) return titleCache.get(cacheKey)!;
+  if (!isDev && titleCache.has(cacheKey)) return titleCache.get(cacheKey)!;
 
   if (!fs.existsSync(filePath)) {
     titleCache.set(cacheKey, null);
@@ -116,7 +122,7 @@ export function readMeta(
 ): { title?: string; pages?: string[]; root?: boolean } | null {
   const metaPath = path.join(dir, "meta.json");
   const cacheKey = path.resolve(metaPath);
-  if (metaCache.has(cacheKey)) return metaCache.get(cacheKey)!;
+  if (!isDev && metaCache.has(cacheKey)) return metaCache.get(cacheKey)!;
 
   if (!fs.existsSync(metaPath)) {
     metaCache.set(cacheKey, null);

@@ -1,0 +1,36 @@
+{
+  "features": {
+    "agentic-chat": {
+      "og_docs_url": "https://docs.copilotkit.ai/built-in-agent/quickstart",
+      "shell_docs_path": "/integrations/built-in-agent/quickstart"
+    },
+    "hitl-in-chat": {
+      "og_docs_url": "https://docs.copilotkit.ai/features/hitl-in-chat",
+      "shell_docs_path": "/docs/features/hitl-in-chat"
+    },
+    "tool-rendering": {
+      "og_docs_url": "https://docs.copilotkit.ai/features/tool-rendering",
+      "shell_docs_path": "/docs/features/tool-rendering"
+    },
+    "gen-ui-tool-based": {
+      "og_docs_url": "https://docs.copilotkit.ai/features/gen-ui-tool-based",
+      "shell_docs_path": "/docs/features/gen-ui-tool-based"
+    },
+    "gen-ui-agent": {
+      "og_docs_url": "https://docs.copilotkit.ai/features/gen-ui-agent",
+      "shell_docs_path": "/docs/features/gen-ui-agent"
+    },
+    "shared-state-read-write": {
+      "og_docs_url": "https://docs.copilotkit.ai/built-in-agent/shared-state",
+      "shell_docs_path": "/integrations/built-in-agent/shared-state"
+    },
+    "shared-state-streaming": {
+      "og_docs_url": "https://docs.copilotkit.ai/features/shared-state-streaming",
+      "shell_docs_path": "/docs/features/shared-state-streaming"
+    },
+    "subagents": {
+      "og_docs_url": "https://docs.copilotkit.ai/features/subagents",
+      "shell_docs_path": "/docs/features/subagents"
+    }
+  }
+}

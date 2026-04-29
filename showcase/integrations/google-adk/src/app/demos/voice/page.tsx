@@ -1,0 +1,39 @@
+"use client";
+
+import React from "react";
+import {
+  CopilotKit,
+  CopilotChat,
+  useConfigureSuggestions,
+} from "@copilotkit/react-core/v2";
+
+export default function VoiceDemo() {
+  return (
+    <CopilotKit runtimeUrl="/api/copilotkit" agent="voice">
+      <DemoContent />
+    </CopilotKit>
+  );
+}
+
+function DemoContent() {
+  useConfigureSuggestions({
+    suggestions: [
+      { title: "Try voice", message: "Tap the mic and ask me anything." },
+      { title: "Quick tip", message: "Give me one productivity tip." },
+    ],
+    available: "always",
+  });
+
+  return (
+    <div className="flex justify-center items-center h-screen w-full bg-gradient-to-br from-purple-50 to-pink-50">
+      <div className="h-full w-full max-w-4xl">
+        {/* The voice button is rendered by CopilotChat's default input slot
+            when @copilotkit/voice is installed and the runtime exposes a
+            transcribe endpoint — passing an empty `input={{}}` prop here
+            previously overrode that default with no override at all. We
+            omit the prop entirely so the default slot stays active. */}
+        <CopilotChat agentId="voice" className="h-full rounded-2xl" />
+      </div>
+    </div>
+  );
+}

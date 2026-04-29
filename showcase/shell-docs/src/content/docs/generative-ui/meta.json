@@ -12,6 +12,7 @@
     "a2ui",
     "a2ui/dynamic-schema",
     "a2ui/fixed-schema",
+    "open-json-ui",
     "---Open-Ended---",
     "mcp-apps"
   ]

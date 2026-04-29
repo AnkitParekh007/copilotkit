@@ -243,8 +243,6 @@ export default async function FrameworkScopedDocsPage({
     notFound();
   }
 
-  const backLink = { label: "\u2190 All docs", href: "/" };
-
   // Detect whether this page's default cell (the feature) has any
   // snippets tagged for the current framework. When it doesn't, show
   // a prominent banner pointing the user at a framework that does.
@@ -307,8 +305,6 @@ export default async function FrameworkScopedDocsPage({
       contentSlugPath={contentSlugPath}
       slugHrefPrefix={`/${framework}`}
       frameworkOverride={framework}
-      sidebarTitle={integration.name}
-      backLink={backLink}
       navTree={navTree}
       bannerSlot={banner}
     />
@@ -334,18 +330,6 @@ function FrameworkLandingPage({ framework }: { framework: string }) {
     <div className="flex" style={{ height: "calc(100vh - 53px)" }}>
       <aside className="w-[240px] shrink-0 border-r border-[var(--border)] bg-[var(--bg)] overflow-y-auto p-4">
         <SidebarFrameworkSelector />
-        <Link
-          href="/"
-          className="block text-xs text-[var(--text-muted)] hover:text-[var(--text-secondary)] mb-3 transition-colors"
-        >
-          ← All docs
-        </Link>
-        <Link
-          href={`/${framework}`}
-          className="block text-xs font-mono uppercase tracking-widest text-[var(--accent)] mb-4"
-        >
-          {integration.name}
-        </Link>
         {tree.map((node, i) => (
           <RenderNav key={i} node={node} framework={framework} />
         ))}
@@ -449,12 +433,6 @@ function NotAvailableForFrameworkPage({
     <div className="flex" style={{ height: "calc(100vh - 53px)" }}>
       <aside className="w-[240px] shrink-0 border-r border-[var(--border)] bg-[var(--bg)] overflow-y-auto p-4">
         <SidebarFrameworkSelector />
-        <Link
-          href="/"
-          className="block text-xs text-[var(--text-muted)] hover:text-[var(--text-secondary)] mb-3 transition-colors"
-        >
-          ← All docs
-        </Link>
         <Link
           href={`/${framework.slug}`}
           className="block text-xs font-mono uppercase tracking-widest text-[var(--accent)] mb-4"

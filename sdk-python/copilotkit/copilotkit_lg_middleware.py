@@ -16,7 +16,7 @@ Example:
 
 import json
 import re
-from typing import Any, Callable, Awaitable, ClassVar, List
+from typing import Any, Callable, Awaitable, ClassVar, Iterable, List, Union
 
 from langchain_core.messages import AIMessage, SystemMessage, ToolMessage
 from langchain.agents.middleware import (
@@ -33,25 +33,118 @@ class StateSchema(AgentState):
     copilotkit: CopilotKitProperties
 
 
+# Internal/framework keys that should never be surfaced to the LLM as
+# user-facing state. These are either reducer-managed message buckets,
+# CopilotKit/AG-UI plumbing, or graph-internal scaffolding.
+_RESERVED_STATE_KEYS = frozenset({
+    "messages",
+    "copilotkit",
+    "ag-ui",
+    "tools",
+    "structured_response",
+    "thread_id",
+    "remaining_steps",
+})
+
+
 class CopilotKitMiddleware(AgentMiddleware[StateSchema, Any]):
     """CopilotKit Middleware for LangGraph agents.
 
-    Handles frontend tool injection and interception for CopilotKit.
+    Handles frontend tool injection, interception for CopilotKit, and
+    automatic exposure of agent state to the LLM so values written via
+    ``agent.setState`` on the frontend (or via ``Command(update=...)`` in a
+    tool) are visible in the next model call without needing a custom
+    ``get_state`` tool.
+
+    Args:
+        expose_state: Controls how user-defined state keys are surfaced into
+            ``request.system_message`` on every model call. Off by default
+            to avoid leaking arbitrary state into prompts; opt in explicitly.
+
+            - ``False`` (default) — never surface state.
+            - ``True`` — every state key that is not in the reserved
+              internal set and does not start with an underscore is
+              JSON-serialized into a "Current agent state:" note appended
+              to the system message.
+            - ``list``/``tuple``/``set[str]`` — only surface the named keys.
+              Use this when you want explicit control over what the LLM
+              sees (e.g. ``["liked", "todos"]``).
     """
 
     state_schema = StateSchema
     tools: ClassVar[list] = []
 
+    def __init__(
+        self,
+        *,
+        expose_state: Union[bool, Iterable[str]] = False,
+    ):
+        super().__init__()
+        if isinstance(expose_state, bool):
+            self._expose_state: Union[bool, frozenset[str]] = expose_state
+        else:
+            self._expose_state = frozenset(expose_state)
+
     @property
     def name(self) -> str:
         return "CopilotKitMiddleware"
 
-    # Inject frontend tools before model call
+    # ------------------------------------------------------------------
+    # State-to-prompt surfacing
+    # ------------------------------------------------------------------
+
+    def _build_state_note(self, state: dict) -> str | None:
+        """Serialize a snapshot of user state into a system-prompt note.
+
+        Returns ``None`` when nothing should be appended (feature disabled
+        or no non-empty user keys present).
+        """
+        if self._expose_state is False:
+            return None
+        if isinstance(self._expose_state, frozenset):
+            keys: list[str] = [k for k in self._expose_state if k in state]
+        else:
+            keys = [
+                k for k in state
+                if k not in _RESERVED_STATE_KEYS and not str(k).startswith("_")
+            ]
+
+        snapshot: dict[str, Any] = {}
+        for k in keys:
+            v = state.get(k)
+            # Skip empty / no-op values to keep the note tight.
+            if v in (None, "", [], {}):
+                continue
+            snapshot[k] = v
+
+        if not snapshot:
+            return None
+
+        try:
+            body = json.dumps(snapshot, default=str, ensure_ascii=False, indent=2)
+        except (TypeError, ValueError):
+            body = str(snapshot)
+        return f"Current agent state:\n{body}"
+
+    def _apply_state_note(self, request: ModelRequest) -> ModelRequest:
+        note = self._build_state_note(request.state or {})
+        if not note:
+            return request
+        existing = request.system_message
+        if existing is None:
+            return request.override(system_message=SystemMessage(content=note))
+        base = existing.content if isinstance(existing.content, str) else str(existing.content)
+        return request.override(
+            system_message=SystemMessage(content=f"{base}\n\n{note}")
+        )
+
+    # Inject frontend tools and surface user state before model call
     def wrap_model_call(
             self,
             request: ModelRequest,
             handler: Callable[[ModelRequest], ModelResponse],
     ) -> ModelResponse:
+        request = self._apply_state_note(request)
         frontend_tools = request.state.get("copilotkit", {}).get("actions", [])
 
         if not frontend_tools:
@@ -224,6 +317,7 @@ class CopilotKitMiddleware(AgentMiddleware[StateSchema, Any]):
             handler: Callable[[ModelRequest], Awaitable[ModelResponse]],
     ) -> ModelResponse:
         self._fix_messages_for_bedrock(request.messages)
+        request = self._apply_state_note(request)
 
         frontend_tools = request.state.get("copilotkit", {}).get("actions", [])
 

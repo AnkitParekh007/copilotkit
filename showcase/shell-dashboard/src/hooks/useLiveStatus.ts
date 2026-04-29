@@ -13,13 +13,13 @@ export interface UseLiveStatusResult {
 }
 
 const MAX_RECONNECT_ATTEMPTS = 3;
-// Hard cap on initial fetch size so the dashboard doesn't blow up on load if
-// the `status` collection grows to thousands of rows. 500 comfortably covers
-// the current surface (17 integrations * ~40 features * 4 dimensions ≈ 2.7k,
-// bounded further by dimension filter) and keeps first-paint snappy.
-// Implemented via a paginated `getList` loop (NOT `getFullList({ batch })` —
-// pb's `batch` is per-request page size, not an overall cap).
-const INITIAL_CAP = 500;
+// Hard cap on initial fetch size. The `status` collection contains ~1300+
+// records across all probe dimensions (smoke, health, agent, e2e per-cell,
+// d5 per-feature, chat, tools, image-drift, etc.). Records are fetched in
+// rowid order; with a cap below the total, later-created dimensions (e2e
+// per-cell) get truncated and those cells show D2 instead of D4.
+// 2000 covers the current surface with headroom for growth.
+const INITIAL_CAP = 2000;
 const INITIAL_PAGE_SIZE = 200;
 // Heartbeat interval for detecting silent SSE drops. PB's realtime client
 // auto-reconnects internally but gives no explicit error callback; if the

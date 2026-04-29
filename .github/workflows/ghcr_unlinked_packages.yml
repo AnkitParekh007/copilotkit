@@ -7,7 +7,7 @@
 # builds in `CopilotKit/CopilotKit` get `403 Forbidden` on push to GHCR —
 # the workflow's `GITHUB_TOKEN` only has package-write permissions when
 # the package is linked to the actor's repo. We hit this twice in quick
-# succession (`showcase-ops` caught manually after a failed deploy, and
+# succession (`showcase-harness` caught manually after a failed deploy, and
 # `showcase-pocketbase` caught by a preemptive scan). There is NO GitHub
 # API to programmatically link a package to a repo — it is UI-only — so
 # the only way to prevent future surprises is detect drift early via a

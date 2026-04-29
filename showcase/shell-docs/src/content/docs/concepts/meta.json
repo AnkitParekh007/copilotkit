@@ -1,4 +1,8 @@
 {
   "title": "Concepts",
-  "pages": ["architecture", "three-types-of-gen-ui", "oss-vs-enterprise"]
+  "pages": [
+    "architecture",
+    "generative-ui-overview",
+    "oss-vs-enterprise"
+  ]
 }

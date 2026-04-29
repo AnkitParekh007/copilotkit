@@ -1,0 +1,28 @@
+{
+  "_comment": "D5 fixture for /demos/tool-rendering against LangGraph Python (LGP). The frontend only registers get_weather, so the fixture returns a single tool call. Uses toolCallId matching: toolCallId fixture tried first, skips on initial request (no tool result), matches on second request when tool result is present. ORDER: toolCallId fixture above userMessage-only fixture so it is tried first.",
+  "fixtures": [
+    {
+      "match": {
+        "userMessage": "weather in Tokyo",
+        "toolCallId": "call_d5_get_weather_001"
+      },
+      "response": {
+        "content": "Tokyo is 22°C and partly cloudy."
+      }
+    },
+    {
+      "match": {
+        "userMessage": "weather in Tokyo"
+      },
+      "response": {
+        "toolCalls": [
+          {
+            "id": "call_d5_get_weather_001",
+            "name": "get_weather",
+            "arguments": "{\"location\":\"Tokyo\"}"
+          }
+        ]
+      }
+    }
+  ]
+}

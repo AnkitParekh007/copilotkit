@@ -1,5 +1,5 @@
 {
-  "_comment": "Bundled D5 (e2e-deep) fixtures. Source files: showcase/ops/fixtures/d5/*.json. Loaded by aimock before feature-parity.json for match precedence.",
+  "_comment": "Bundled D5 (e2e-deep) fixtures. Source files: showcase/harness/fixtures/d5/*.json. Loaded by aimock before feature-parity.json for match precedence.",
   "fixtures": [
     {
       "match": {
@@ -27,6 +27,7 @@
     },
     {
       "match": {
+        "userMessage": "Show me a pie chart of revenue by category",
         "toolCallId": "call_d5_render_pie_chart_001"
       },
       "response": {
@@ -49,6 +50,30 @@
     },
     {
       "match": {
+        "userMessage": "Write me a haiku about nature",
+        "toolCallId": "call_d5_generate_haiku_001"
+      },
+      "response": {
+        "content": "Haiku generated above — a beautiful verse about nature with an accompanying image."
+      }
+    },
+    {
+      "match": {
+        "userMessage": "Write me a haiku about nature"
+      },
+      "response": {
+        "toolCalls": [
+          {
+            "id": "call_d5_generate_haiku_001",
+            "name": "generate_haiku",
+            "arguments": "{\"japanese\":[\"古池や\",\"蛙飛び込む\",\"水の音\"],\"english\":[\"An old silent pond\",\"A frog jumps into the pond\",\"Splash! Silence again.\"],\"image_name\":\"Mount_Fuji_Lake_Reflection_Cherry_Blossoms_Sakura_Spring.jpg\",\"gradient\":\"linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)\"}"
+          }
+        ]
+      }
+    },
+    {
+      "match": {
+        "userMessage": "Show me a profile card for Ada Lovelace",
         "toolCallId": "call_d5_show_card_001"
       },
       "response": {
@@ -71,6 +96,7 @@
     },
     {
       "match": {
+        "userMessage": "Issue a $50 refund to customer #12345",
         "toolCallId": "call_d5_request_approval_001"
       },
       "response": {
@@ -93,6 +119,7 @@
     },
     {
       "match": {
+        "userMessage": "trip to mars",
         "toolCallId": "call_d5_generate_steps_001"
       },
       "response": {
@@ -115,6 +142,7 @@
     },
     {
       "match": {
+        "userMessage": "Book a 30-minute onboarding call for Alice",
         "toolCallId": "call_d5_book_call_001"
       },
       "response": {
@@ -130,13 +158,14 @@
           {
             "id": "call_d5_book_call_001",
             "name": "book_call",
-            "arguments": "{\"topic\":\"Onboarding call\",\"name\":\"Alice\"}"
+            "arguments": "{\"topic\":\"Onboarding call\",\"attendee\":\"Alice\"}"
           }
         ]
       }
     },
     {
       "match": {
+        "userMessage": "Research the benefits of remote work and draft a one-paragraph summary",
         "toolCallId": "call_d5_critique_agent_001"
       },
       "response": {
@@ -145,6 +174,7 @@
     },
     {
       "match": {
+        "userMessage": "Research the benefits of remote work and draft a one-paragraph summary",
         "toolCallId": "call_d5_writing_agent_001"
       },
       "response": {
@@ -159,6 +189,7 @@
     },
     {
       "match": {
+        "userMessage": "Research the benefits of remote work and draft a one-paragraph summary",
         "toolCallId": "call_d5_research_agent_001"
       },
       "response": {
@@ -187,6 +218,7 @@
     },
     {
       "match": {
+        "userMessage": "remember that my favorite color is blue",
         "toolCallId": "call_d5_set_notes_001"
       },
       "response": {
@@ -217,6 +249,7 @@
     },
     {
       "match": {
+        "userMessage": "weather in Tokyo",
         "toolCallId": "call_d5_get_weather_001"
       },
       "response": {

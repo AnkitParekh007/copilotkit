@@ -7,7 +7,7 @@
  * `ProbeScheduleEntry` is re-exported from `lib/ops-api` so existing
  * imports from `./status-tab` keep working while the canonical wire-shape
  * lives in one place. The canonical definition is the source of truth for
- * the showcase-ops HTTP contract — drift between this file and ops-api
+ * the showcase-harness HTTP contract — drift between this file and ops-api
  * was a real problem (e.g. local lacked `error?` / `finishedAt?` on
  * service progress, and used `string` instead of the `ProbeKind` union).
  */

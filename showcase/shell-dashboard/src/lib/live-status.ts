@@ -1,6 +1,6 @@
 /**
  * Shared types + key helpers for the live-status path (§5.4, §5 of the
- * showcase-ops design spec).
+ * showcase-harness design spec).
  *
  * PB row keys: `<dimension>:<slug>` for integration-level dimensions
  * (e.g. `health`, `agent`, `chat`, `tools`), or

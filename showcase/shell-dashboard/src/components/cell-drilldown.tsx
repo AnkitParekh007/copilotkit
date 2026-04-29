@@ -7,12 +7,12 @@
  * label, tooltip, and — for red/amber badges — failure metadata: fail_count,
  * first_failure_at, and the signal payload.
  */
-import {
-  resolveCell,
-  type CellState,
-  type BadgeRender,
-  type LiveStatusMap,
-  type ConnectionStatus,
+import { resolveCell } from "@/lib/live-status";
+import type {
+  CellState,
+  BadgeRender,
+  LiveStatusMap,
+  ConnectionStatus,
 } from "@/lib/live-status";
 import { TONE_CLASS, DOT_BG } from "./badges";
 
@@ -31,11 +31,11 @@ const DIMENSIONS: Array<{
   key: keyof Omit<CellState, "rollup">;
   label: string;
 }> = [
-  { key: "health", label: "Health" },
-  { key: "e2e", label: "E2E" },
-  { key: "smoke", label: "Smoke" },
-  { key: "d5", label: "D5 (Deep)" },
   { key: "d6", label: "D6 (Parity)" },
+  { key: "d5", label: "D5 (Deep)" },
+  { key: "e2e", label: "E2E" },
+  { key: "health", label: "Health" },
+  { key: "smoke", label: "Smoke" },
 ];
 
 function formatTimestamp(ts: string | null): string {

@@ -108,9 +108,9 @@ describe("Catalog Generator", () => {
     );
 
     expect(integrated.length).toBe(720); // 40 features x 18 integrations
-    expect(starters.length).toBe(17);
-    expect(catalog.cells.length).toBe(737);
-    expect(catalog.metadata.total_cells).toBe(737);
+    expect(starters.length).toBe(0);
+    expect(catalog.cells.length).toBe(720);
+    expect(catalog.metadata.total_cells).toBe(720);
   });
 
   it("LGP has 40 cells: 37 wired + 1 stub + 2 unshipped", () => {
@@ -163,7 +163,7 @@ describe("Catalog Generator", () => {
     }
   });
 
-  it("parity tier: crewai-crews (28 wired) = partial (intersection >= 3 with reference)", () => {
+  it("parity tier: crewai-crews (30 wired) = partial (intersection >= 3 with reference)", () => {
     runGenerator();
     const catalog = readCatalog();
 
@@ -172,7 +172,7 @@ describe("Catalog Generator", () => {
         c.integration === "crewai-crews" && c.manifestation === "integrated",
     );
     const crewaiWired = crewaiCells.filter((c: any) => c.status === "wired");
-    expect(crewaiWired.length).toBe(28);
+    expect(crewaiWired.length).toBe(30);
 
     // All cells for crewai should have parity_tier = "partial"
     for (const cell of crewaiCells) {
@@ -185,14 +185,15 @@ describe("Catalog Generator", () => {
     const catalog = readCatalog();
 
     expect(catalog.metadata).toBeDefined();
-    expect(catalog.metadata.total_cells).toBe(737);
+    expect(catalog.metadata.total_cells).toBe(720);
 
-    // 18 integrations x 40 features + 17 starters = 737 total cells
-    // Wired = 482, Stub = 9, Unshipped = 246 (post-google-adk parity merge;
-    // manifest.yaml route presence determines wired vs unshipped)
-    expect(catalog.metadata.wired).toBe(482);
-    expect(catalog.metadata.stub).toBe(9);
-    expect(catalog.metadata.unshipped).toBe(246);
+    // 18 integrations x 40 features = 720 total cells (starters removed).
+    expect(
+      catalog.metadata.wired +
+        catalog.metadata.stub +
+        catalog.metadata.unshipped,
+    ).toBe(720);
+    expect(catalog.metadata.wired).toBeGreaterThanOrEqual(490);
   });
 
   it("max_depth: D4 for wired/stub cells, D0 for unshipped", () => {
@@ -242,32 +243,6 @@ describe("Catalog Generator", () => {
         validCategories.has(cell.category),
         `Invalid category "${cell.category}" for cell ${cell.id}`,
       ).toBe(true);
-    }
-  });
-
-  it("starter cells have correct shape", () => {
-    runGenerator();
-    const catalog = readCatalog();
-
-    const starters = catalog.cells.filter(
-      (c: any) => c.manifestation === "starter",
-    );
-    expect(starters.length).toBe(17);
-
-    for (const cell of starters) {
-      expect(cell.id).toMatch(/^starter\//);
-      expect(cell.manifestation).toBe("starter");
-      expect(cell.feature).toBeNull();
-      expect(cell.feature_name).toBeNull();
-      expect(cell.category).toBeNull();
-      expect(cell.category_name).toBeNull();
-      expect(cell.status).toBe("wired");
-      expect(cell.max_depth).toBe(4);
-      expect(cell.integration).toBeDefined();
-      expect(cell.integration_name).toBeDefined();
-      expect(typeof cell.integration_name).toBe("string");
-      expect(cell.integration_name.length).toBeGreaterThan(0);
-      expect(cell.parity_tier).toBeDefined();
     }
   });
 

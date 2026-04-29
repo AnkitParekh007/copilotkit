@@ -255,12 +255,9 @@ export function CellMatrix({
   }, [sortedIntegrations, filter, referenceSlug]);
 
   // Index cells by integration+feature for O(1) lookup.
-  // Skip starter cells (feature === null) — they have no feature row to render
-  // and would otherwise produce a bogus "<slug>/null" key that orphans them.
   const cellIndex = useMemo(() => {
     const idx = new Map<string, CatalogCell>();
     for (const c of cells) {
-      if (c.feature === null) continue;
       idx.set(`${c.integration}/${c.feature}`, c);
     }
     return idx;

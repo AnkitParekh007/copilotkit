@@ -1,26 +1,20 @@
 "use client";
 
 // DocsLandingNext — the "what comes after the product overview" block on
-// the docs landing at `/`. Renders one of two layouts based on whether
-// the user has a stored framework preference:
+// the docs landing at `/`. Always renders the "Continue with {framework}"
+// pointers using `effectiveFramework` (Built-in Agent by default; the
+// user's stored pick or URL-active framework if either is set), then a
+// "Switch framework" picker grid below so other backends remain one
+// click away.
 //
-//   - null  → "Pick your agent framework" heading + the categorized
-//             integrations grid (Popular / Agent Frameworks /
-//             Provider SDKs / …), so a fresh visitor's first action is
-//             clearly to choose a backend. Mirrors the old docs-landing
-//             picker shape so users see the same UI shell-internally
-//             whether they arrived from the marketing landing or the
-//             docs root.
-//   - set   → "Continue with {FrameworkName}" heading + a small pointer
-//             grid (Quickstart, framework landing, switch framework),
-//             so a returning visitor lands on actionable next steps
-//             instead of being prompted to re-pick.
-//
-// Renders null until mounted to avoid the SSR/CSR hydration mismatch that
-// `storedFramework` reads from localStorage cause — same pattern as
-// StoredFrameworkHighlight.
+// Old behaviour: branched on `storedFramework`. Null showed a forced
+// picker, set showed "Continue with X". The forced-picker branch was a
+// dead end for fresh visitors who hadn't yet decided which backend to
+// build against. Soft-defaulting to BIA via `effectiveFramework` lets
+// us collapse the two branches into one and keep the picker as a
+// secondary affordance instead of a gate.
 
-import React, { useEffect, useState } from "react";
+import React from "react";
 import Link from "next/link";
 import { useFramework } from "./framework-provider";
 import { StoredFrameworkHighlight } from "./stored-framework-highlight";
@@ -39,8 +33,11 @@ function FrameworkPicker({
   heading: string;
   description: string;
 }) {
+  // Drop Built-in Agent: it's the soft-default the page is already
+  // rendering as, so showing it under "Switch backend" would just be a
+  // no-op tile.
   const integrations = getIntegrations()
-    .slice()
+    .filter((i) => i.slug !== "built-in-agent")
     .sort((a, b) => (a.sort_order ?? 999) - (b.sort_order ?? 999));
 
   // Bucket integrations by category, honoring the canonical ordering.
@@ -94,39 +91,17 @@ function FrameworkPicker({
 }
 
 export function DocsLandingNext() {
-  const { framework, storedFramework, setStoredFramework } = useFramework();
-  const [mounted, setMounted] = useState(false);
+  const { effectiveFramework } = useFramework();
 
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  // Prefer the URL-active framework, then fall back to the stored
-  // preference. On `/<framework>`, framework is set in SSR and we can
-  // render the "Continue with X" branch immediately. On `/`, framework
-  // is null and we wait for mount to read storedFramework — same shape
-  // as the previous mount-then-stored flow.
-  const activeFramework = framework ?? (mounted ? storedFramework : null);
-
-  if (!framework && !mounted) return null;
-
-  if (!activeFramework) {
-    return (
-      <FrameworkPicker
-        heading="Pick your agent framework"
-        description="We store your choice locally so every page renders the right code. Once you pick a framework you can switch any time from the sidebar."
-      />
-    );
-  }
-
-  const integration = getIntegration(activeFramework);
+  const integration = getIntegration(effectiveFramework);
   if (!integration) {
-    // Stored slug doesn't match any current integration (renamed,
-    // removed, or stale localStorage). Fall back to the picker.
+    // Defensive: the registry has dropped the default framework. Should
+    // not happen — DEFAULT_FRAMEWORK is a known slug — but rendering
+    // the picker as a last resort beats throwing.
     return (
       <FrameworkPicker
         heading="Pick your agent framework"
-        description="Your previous choice is no longer available. Pick a framework to continue."
+        description="Pick a backend to continue."
       />
     );
   }
@@ -138,9 +113,9 @@ export function DocsLandingNext() {
       </h2>
       <p className="text-sm text-[var(--text-secondary)] leading-relaxed mb-5">
         We&apos;ll render every code snippet using {integration.name}. Pick up
-        where you left off, or switch frameworks any time from the sidebar.
+        where you left off — or switch backends below or from the sidebar.
       </p>
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-10">
         <Link
           href={`/${integration.slug}/quickstart`}
           className="group flex flex-col gap-1 rounded-lg border border-[var(--border)] bg-[var(--bg-surface)] p-4 no-underline hover:border-[var(--accent)] hover:shadow-sm transition"
@@ -163,19 +138,12 @@ export function DocsLandingNext() {
             Every topic rendered with {integration.name} snippets.
           </div>
         </Link>
-        <button
-          type="button"
-          onClick={() => setStoredFramework(null)}
-          className="group flex flex-col gap-1 rounded-lg border border-[var(--border)] bg-[var(--bg-surface)] p-4 no-underline hover:border-[var(--accent)] hover:shadow-sm transition text-left cursor-pointer"
-        >
-          <div className="font-semibold text-[var(--text)] group-hover:text-[var(--accent)]">
-            Switch framework
-          </div>
-          <div className="text-sm text-[var(--text-secondary)] leading-relaxed">
-            Show the framework picker again.
-          </div>
-        </button>
       </div>
+
+      <FrameworkPicker
+        heading="Switch backend"
+        description="Pick another backend and the rest of the docs will render with its code."
+      />
     </div>
   );
 }
