@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { CopilotChat, CopilotKitProvider } from "@copilotkitnext/vue";
+import { CopilotChat, CopilotKitProvider } from "@copilotkit/vue";
 </script>
 
 <template>

@@ -10,7 +10,7 @@ import {
   CopilotChatConfigurationProvider,
   CopilotChatMessageView,
   CopilotKitProvider,
-} from "@copilotkitnext/vue";
+} from "@copilotkit/vue";
 import { ref } from "vue";
 
 const handleThumbsUp = () => window.alert("thumbsUp");

@@ -5,7 +5,7 @@ import {
   CopilotChatConfigurationProvider,
   CopilotChatToggleButton,
   useCopilotChatConfiguration,
-} from "@copilotkitnext/vue";
+} from "@copilotkit/vue";
 
 const StatePreview = defineComponent({
   name: "CopilotChatToggleButtonStoryPreview",

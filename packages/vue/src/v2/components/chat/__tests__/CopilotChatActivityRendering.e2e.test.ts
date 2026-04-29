@@ -9,7 +9,7 @@ import { defineComponent, ref, toRaw } from "vue";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AbstractAgent } from "@ag-ui/client";
 import { EventType } from "@ag-ui/client";
-import type { Theme } from "@copilotkit/a2ui-renderer";
+import type { A2UITheme as Theme } from "../../../types";
 import { IntelligenceAgent } from "@copilotkit/core";
 import CopilotChat from "../CopilotChat.vue";
 import CopilotKitProvider from "../../../providers/CopilotKitProvider.vue";

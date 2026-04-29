@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/vue3-vite";
-import { CopilotKitInspector } from "@copilotkitnext/vue";
+import { CopilotKitInspector } from "@copilotkit/vue";
 
 const meta = {
   title: "Components/CopilotKit Inspector",

@@ -7,8 +7,8 @@
     "moduleResolution": "Bundler",
     "baseUrl": ".",
     "paths": {
-      "@copilotkitnext/vue": ["../../../../packages/vue/src/index.ts"],
-      "@copilotkitnext/vue/*": ["../../../../packages/vue/src/*"],
+      "@copilotkit/vue": ["../../../../packages/vue/src/index.ts"],
+      "@copilotkit/vue/*": ["../../../../packages/vue/src/*"],
       "@copilotkit/core": [
         "../../../../packages/core/dist/index.d.cts",
         "../../../../packages/core/src/index.ts"

@@ -1613,7 +1613,7 @@ importers:
       '@copilotkit/voice':
         specifier: workspace:*
         version: link:../../../../packages/voice
-      '@copilotkitnext/vue':
+      '@copilotkit/vue':
         specifier: workspace:*
         version: link:../../../../packages/vue
       h3:
@@ -1684,7 +1684,7 @@ importers:
       '@copilotkit/typescript-config':
         specifier: workspace:*
         version: link:../../../../packages/typescript-config
-      '@copilotkitnext/vue':
+      '@copilotkit/vue':
         specifier: workspace:*
         version: link:../../../../packages/vue
       '@storybook/addon-docs':
@@ -2929,15 +2929,15 @@ importers:
 
   packages/vue:
     dependencies:
+      '@a2ui/web_core':
+        specifier: 0.9.0
+        version: 0.9.0
       '@ag-ui/client':
         specifier: 0.0.52
         version: 0.0.52
       '@ag-ui/core':
         specifier: 0.0.52
         version: 0.0.52
-      '@copilotkit/a2ui-renderer':
-        specifier: workspace:*
-        version: link:../a2ui-renderer
       '@copilotkit/core':
         specifier: workspace:*
         version: link:../core
@@ -2956,12 +2956,6 @@ importers:
       lucide-vue-next:
         specifier: ^0.525.0
         version: 0.525.0(vue@3.5.33(typescript@5.8.2))
-      react:
-        specifier: 19.2.3
-        version: 19.2.3
-      react-dom:
-        specifier: 19.2.3
-        version: 19.2.3(react@19.2.3)
       streamdown-vue:
         specifier: ^1.0.29
         version: 1.0.29(typescript@5.8.2)(vue@3.5.33(typescript@5.8.2))
@@ -2993,12 +2987,6 @@ importers:
       '@types/node':
         specifier: ^22.15.3
         version: 22.19.17
-      '@types/react':
-        specifier: ^19.1.0
-        version: 19.2.14
-      '@types/react-dom':
-        specifier: ^19.0.2
-        version: 19.2.3(@types/react@19.2.14)
       '@vitejs/plugin-vue':
         specifier: ^5.2.1
         version: 5.2.4(vite@6.4.1(@types/node@22.19.17)(jiti@2.6.1)(less@4.5.1)(lightningcss@1.32.0)(sass@1.97.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2))(vue@3.5.33(typescript@5.8.2))
@@ -24657,7 +24645,7 @@ snapshots:
       '@preact/signals-core': 1.14.1
       date-fns: 4.1.0
       zod: 3.25.76
-      zod-to-json-schema: 3.25.1(zod@3.25.76)
+      zod-to-json-schema: 3.25.2(zod@3.25.76)
 
   '@adobe/css-tools@4.4.4': {}
 
@@ -37149,6 +37137,7 @@ snapshots:
   '@types/react-dom@19.2.3(@types/react@19.2.14)':
     dependencies:
       '@types/react': 19.2.14
+    optional: true
 
   '@types/react-dom@19.2.3(@types/react@19.2.7)':
     dependencies:

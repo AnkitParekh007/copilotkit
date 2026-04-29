@@ -1,4 +1,4 @@
-# React-to-Vue Parity Guide (`@copilotkitnext/vue`)
+# React-to-Vue Parity Guide (`@copilotkit/vue`)
 
 This document is the living parity map for the Vue port.
 Keep it updated whenever React parity work lands in `packages/vue`.
@@ -12,7 +12,7 @@ Keep it updated whenever React parity work lands in `packages/vue`.
 
 ## Package boundary and documentation placement
 
-- `@copilotkitnext/vue` follows the same single-package direction as `@copilotkitnext/react`.
+- `@copilotkit/vue` follows the same single-package direction as `@copilotkit/react`.
 - Core hooks/providers/types and UI-facing rendering primitives should live in this package.
 - Keep scope aligned with React's package surface; avoid introducing a parallel `vue-ui` package split.
 - Do not add Vue-only hook/component pages to the shared `docs/` V2 reference unless the repository adopts an explicit Vue section there.

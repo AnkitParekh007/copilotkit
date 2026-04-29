@@ -3,8 +3,8 @@ import type { Meta, StoryObj } from "@storybook/vue3-vite";
 import {
   CopilotChatConfigurationProvider,
   CopilotChatInput,
-} from "@copilotkitnext/vue";
-import type { ToolsMenuItem } from "@copilotkitnext/vue";
+} from "@copilotkit/vue";
+import type { ToolsMenuItem } from "@copilotkit/vue";
 
 const extractValue = (event: Event) =>
   (event.target as HTMLTextAreaElement).value;

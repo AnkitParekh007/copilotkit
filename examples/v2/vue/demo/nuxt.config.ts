@@ -5,17 +5,17 @@ const currentDir = dirname(fileURLToPath(import.meta.url));
 
 export default defineNuxtConfig({
   devtools: { enabled: false },
-  css: ["@copilotkitnext/vue/styles.css", "~/assets/css/main.css"],
+  css: ["@copilotkit/vue/styles.css", "~/assets/css/main.css"],
   alias: {
     // Nuxt's SSR style extraction does not resolve the workspace package CSS export reliably.
-    "@copilotkitnext/vue/styles.css": resolve(
+    "@copilotkit/vue/styles.css": resolve(
       currentDir,
       "../../../../packages/vue/dist/styles.css",
     ),
   },
   vite: {
     ssr: {
-      noExternal: ["@copilotkitnext/vue", "@ag-ui/client", "fast-json-patch"],
+      noExternal: ["@copilotkit/vue", "@ag-ui/client", "fast-json-patch"],
     },
   },
   postcss: {

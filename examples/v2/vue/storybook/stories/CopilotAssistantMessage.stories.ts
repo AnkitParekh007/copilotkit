@@ -4,7 +4,7 @@ import {
   CopilotChatAssistantMessage,
   CopilotChatConfigurationProvider,
   CopilotKitProvider,
-} from "@copilotkitnext/vue";
+} from "@copilotkit/vue";
 
 const createAlertHandler = (message: string) => () => window.alert(message);
 const createLogHandler = (message: string) => () => console.log(message);

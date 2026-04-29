@@ -1,4 +1,4 @@
-# @copilotkitnext/vue
+# @copilotkit/vue
 
 Vue 3 bindings for CopilotKit2: providers, composables, and chat rendering primitives for integrating AI agents into Vue applications.
 
@@ -21,23 +21,23 @@ Follow [PARITY.md](./PARITY.md) for parity workflow. If a feature is not clearly
 ## Installation
 
 ```bash
-pnpm add @copilotkitnext/vue @copilotkit/core
+pnpm add @copilotkit/vue @copilotkit/core
 ```
 
 Import package styles once in your app entry:
 
 ```ts
-import "@copilotkitnext/vue/styles.css";
+import "@copilotkit/vue/styles.css";
 ```
 
 `styles.css` is generated from `src/styles/globals.css` via Tailwind (`pnpm -C packages/vue build:css`).
-The Vue package styles are self-contained and do not require importing `@copilotkitnext/react/styles.css`.
+The Vue package styles are self-contained and do not require importing `@copilotkit/react/styles.css`.
 
 ## Basic Usage
 
 ```vue
 <script setup lang="ts">
-import { CopilotKitProvider } from "@copilotkitnext/vue";
+import { CopilotKitProvider } from "@copilotkit/vue";
 </script>
 
 <template>
@@ -53,7 +53,7 @@ import { CopilotKitProvider } from "@copilotkitnext/vue";
 
 ```vue
 <script setup lang="ts">
-import { CopilotKitProvider } from "@copilotkitnext/vue";
+import { CopilotKitProvider } from "@copilotkit/vue";
 import type { CopilotKitCoreErrorCode } from "@copilotkit/core";
 
 function onProviderError(event: {
@@ -99,7 +99,7 @@ Supported values match React parity:
 
 ```vue
 <script setup lang="ts">
-import { CopilotKitProvider, type DebugConfig } from "@copilotkitnext/vue";
+import { CopilotKitProvider, type DebugConfig } from "@copilotkit/vue";
 
 const debug: DebugConfig = { events: true, lifecycle: true, verbose: false };
 </script>
@@ -120,7 +120,7 @@ It only forwards errors for the resolved chat agent (or global errors without an
 
 ```vue
 <script setup lang="ts">
-import { CopilotChat } from "@copilotkitnext/vue";
+import { CopilotChat } from "@copilotkit/vue";
 
 function onChatError(event: {
   error: Error;
@@ -143,7 +143,7 @@ Notes:
 
 ## Chat Rendering (Slot-Based)
 
-`@copilotkitnext/vue` uses Vue named/scoped slots for message, activity, and tool rendering:
+`@copilotkit/vue` uses Vue named/scoped slots for message, activity, and tool rendering:
 
 - `CopilotChatMessageView`
 - `CopilotChatToolCallsView`
@@ -201,7 +201,7 @@ Slots remain the primary Vue customization path for chat/message rendering. When
 
 ```vue
 <script setup lang="ts">
-import { CopilotKitProvider, CopilotChat } from "@copilotkitnext/vue";
+import { CopilotKitProvider, CopilotChat } from "@copilotkit/vue";
 import { defineComponent } from "vue";
 
 const AuditBadge = defineComponent({
@@ -263,7 +263,7 @@ Default reasoning behavior mirrors React semantics:
 
 ```vue
 <script setup lang="ts">
-import { useThreads } from "@copilotkitnext/vue";
+import { useThreads } from "@copilotkit/vue";
 
 const {
   threads,
@@ -315,7 +315,7 @@ For in-chat usage, combine the composable with the `#interrupt` slot on `Copilot
 
 ```vue
 <script setup lang="ts">
-import { useInterrupt } from "@copilotkitnext/vue";
+import { useInterrupt } from "@copilotkit/vue";
 
 useInterrupt({
   handler: async ({ event }) => ({ label: String(event.value) }),
@@ -355,7 +355,7 @@ import { ref } from "vue";
 import {
   CopilotChatConfigurationProvider,
   CopilotChatInput,
-} from "@copilotkitnext/vue";
+} from "@copilotkit/vue";
 
 const input = ref("");
 
