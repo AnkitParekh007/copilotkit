@@ -176,7 +176,6 @@ type InspectorEvent = {
   payload: SanitizedValue;
 };
 
-
 export class WebInspectorElement extends LitElement {
   static properties = {
     core: { attribute: false },
@@ -187,6 +186,9 @@ export class WebInspectorElement extends LitElement {
   private coreSubscriber: CopilotKitCoreSubscriber | null = null;
   private coreUnsubscribe: (() => void) | null = null;
   private runtimeStatus: CopilotKitCoreRuntimeConnectionStatus | null = null;
+  // TODO(ran-review): suspected dead code — please verify before removing
+  // (only assigned in attachToCore / onPropertiesChanged / detachFromCore;
+  //  never read after the inspector decomposition)
   private coreProperties: Readonly<Record<string, unknown>> = {};
   private lastCoreError: {
     code: CopilotKitCoreErrorCode;
@@ -380,11 +382,7 @@ export class WebInspectorElement extends LitElement {
   private ensureOwnedThreadStore(agentId: string): void {
     if (this._ownedThreadStores.has(agentId)) return;
     // Don't overwrite a store already registered by useThreads() or another external caller
-    if (
-      typeof (this.core as any)?.getThreadStore === "function" &&
-      (this.core as any).getThreadStore(agentId)
-    )
-      return;
+    if (this.core?.getThreadStore(agentId)) return;
     const core = this.core;
     if (!core?.runtimeUrl) return;
 
@@ -396,12 +394,11 @@ export class WebInspectorElement extends LitElement {
       agentId,
     });
     this._ownedThreadStores.set(agentId, store);
-    // Subscribe directly so threads render even on published cores that lack
-    // registerThreadStore (which triggers onThreadStoreRegistered → subscribeToThreadStore).
+    // Subscribe directly so threads render even when no other caller (e.g. useThreads)
+    // has registered this store; registerThreadStore triggers onThreadStoreRegistered →
+    // subscribeToThreadStore.
     this.subscribeToThreadStore(agentId, store);
-    if (typeof (core as any).registerThreadStore === "function") {
-      (core as any).registerThreadStore(agentId, store);
-    }
+    core.registerThreadStore(agentId, store);
   }
 
   private refreshOwnedThreadStore(agentId: string): void {
@@ -409,11 +406,12 @@ export class WebInspectorElement extends LitElement {
     if (!store) return;
     // refresh() re-fetches without resetting threads to [] first, so the list
     // stays visible while new data loads and survives transient fetch failures.
-    if (typeof (store as any).refresh === "function") {
-      (store as any).refresh();
-    }
+    store.refresh();
   }
 
+  // TODO(ran-review): suspected dead code — please verify before removing
+  // (zero callers after inspector decomposition; teardownOwnedThreadStores
+  //  handles the only remaining cleanup path)
   private removeOwnedThreadStore(agentId: string): void {
     const store = this._ownedThreadStores.get(agentId);
     if (!store) return;
@@ -762,6 +760,9 @@ export class WebInspectorElement extends LitElement {
     }
   }
 
+  // TODO(ran-review): suspected dead code — please verify before removing
+  // (zero callers after thread-details was extracted into cpk-thread-details;
+  //  conversation rendering now lives in that element)
   private mapMessagesToConversation(
     messages: InspectorMessage[] | null,
   ): { id: string; type: string; content: string; createdAt: string }[] | null {
@@ -3332,7 +3333,6 @@ ${argsString}</pre
 
     return nothing;
   }
-
 
   private renderThreadsView() {
     if (!this._threadsUnlocked) {
