@@ -550,10 +550,17 @@ export function createE2eDemosDriver(
         // Surface a synthetic `__resolver` side row keyed
         // `e2e:<slug>/__resolver` with errorClass="resolver-error" so
         // the dashboard renders a red dot for the configuration
-        // mistake distinctly from an empty registry.
+        // mistake distinctly from an empty registry, AND return a red
+        // aggregate so alert rules pattern-matching `e2e-demos:*` red
+        // surface the fault. Falling through to the empty-demos green
+        // aggregate would defeat the entire fail-loud branch — the
+        // dashboard would render a red `__resolver` side row but a
+        // green `e2e-demos:<slug>` aggregate, and aggregate-keyed
+        // alerting wouldn't fire.
         const errName = err instanceof Error ? err.name : "Error";
         const msg = err instanceof Error ? err.message : String(err);
         const stack = err instanceof Error ? err.stack : undefined;
+        const truncatedMsg = truncateUtf8(msg, 1200);
         ctx.logger.warn("probe.e2e-demos.demos-resolve-failed", {
           slug,
           errName,
@@ -568,11 +575,25 @@ export function createE2eDemosDriver(
             featureId: "__resolver",
             backendUrl,
             errorClass: "resolver-error",
-            errorDesc: truncateUtf8(msg, 1200),
+            errorDesc: truncatedMsg,
           },
           observedAt: ctx.now().toISOString(),
         });
-        demos = [];
+        return {
+          key: input.key,
+          state: "red",
+          signal: {
+            shape: "package",
+            slug,
+            backendUrl,
+            total: 0,
+            passed: 0,
+            failed: [],
+            errorDesc: "resolver-error",
+            failureSummary: truncatedMsg,
+          },
+          observedAt,
+        };
       }
       // Fall back to in-band demos ONLY when the registry has no entries
       // for this slug (test injection path). Production always goes through

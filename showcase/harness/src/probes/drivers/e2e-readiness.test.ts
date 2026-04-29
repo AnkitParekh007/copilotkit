@@ -1376,10 +1376,18 @@ describe("e2e-demos driver", () => {
     expect(sig?.errorClass).toBe("resolver-error");
     expect(sig?.errorDesc).toMatch(/exploded/);
 
-    // Aggregate primary still emits — the orchestrator's writer sees
-    // both a synthetic red row and the green aggregate; alert rules
-    // can branch on `__resolver` to surface the bug.
+    // Aggregate primary MUST also be red. Without this, alert rules
+    // pattern-matching `e2e-demos:*` red would not fire — the dashboard
+    // would show red `__resolver` + green `e2e-demos:exploded`, defeating
+    // the entire fail-loud branch.
     expect(result.key).toBe("e2e-demos:exploded");
+    expect(result.state).toBe("red");
+    const aggSig = result.signal as E2eDemosAggregateSignal;
+    expect(aggSig.errorDesc).toBe("resolver-error");
+    expect(aggSig.failureSummary).toMatch(/exploded/);
+    expect(aggSig.total).toBe(0);
+    expect(aggSig.passed).toBe(0);
+    expect(aggSig.failed).toEqual([]);
 
     // Log carries errName + stack for debuggability.
     const failLogs = entries.filter(
@@ -1387,6 +1395,48 @@ describe("e2e-demos driver", () => {
     );
     expect(failLogs).toHaveLength(1);
     expect(failLogs[0]?.meta?.errName).toBe("Error");
+  });
+
+  // --- C12b: resolver throw on production path (no input.demos) ----------
+  //
+  // The pre-fix bug: in the catch block the synthetic red row was emitted
+  // but `slugPresentInRegistry` stayed at its default `true`, and `demos`
+  // was set to []. With no `input.demos` to fall back to, the post-catch
+  // `demos.length === 0` branch returned a green "no demos declared"
+  // aggregate — a red side row paired with a green aggregate. This test
+  // exercises the production path (no test-injection demos) and asserts
+  // the aggregate is red end-to-end.
+
+  it("returns red aggregate on production resolver-throw path with no input.demos fallback", async () => {
+    const { browser } = makeBrowser([]);
+    const driver = createE2eDemosDriver({
+      launcher: async () => browser,
+      demosResolver: async () => {
+        throw new Error("registry adapter exploded");
+      },
+    });
+    const { writer, writes } = mkWriter();
+
+    const result = await driver.run(mkCtx(writer), {
+      key: "e2e-demos:exploded",
+      name: "showcase-exploded",
+      publicUrl: "https://showcase-exploded.example.com",
+      shape: "package",
+      // Deliberately NO input.demos — exercise the production code path
+      // that previously fell through to a green "no demos declared"
+      // aggregate.
+    });
+
+    expect(result.state).toBe("red");
+    const aggSig = result.signal as E2eDemosAggregateSignal;
+    expect(aggSig.errorDesc).toBe("resolver-error");
+    expect(aggSig.failureSummary).toMatch(/exploded/);
+
+    // Synthetic side row is still emitted — and only the synthetic side
+    // row, since the early-return prevents any per-demo iteration.
+    expect(writes).toHaveLength(1);
+    expect(writes[0]?.key).toBe("e2e:exploded/__resolver");
+    expect(writes[0]?.state).toBe("red");
   });
 
   // --- Slug missing from registry → fail-loud red row ---------------------
