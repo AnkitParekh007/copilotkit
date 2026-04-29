@@ -76,7 +76,7 @@ cmd_test() {
   local filter_desc=""
   for arg in "${harness_args[@]}"; do
     case "$arg" in
-      --d5|--d4|--smoke) filter_desc=" ($arg)" ;;
+      --d5|--d4|--smoke) filter_desc="${filter_desc:+$filter_desc,}$arg" ;;
     esac
   done
 
@@ -91,7 +91,7 @@ cmd_test() {
     fi
   fi
 
-  info "Testing $slug${filter_desc}..."
+  info "Testing $slug${filter_desc:+ ($filter_desc)}..."
   date -u +%Y-%m-%dT%H:%M:%SZ > "$SHOWCASE_ROOT/.last-test-ts"
 
   local test_exit=0
