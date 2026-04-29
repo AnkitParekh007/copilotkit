@@ -601,7 +601,7 @@ export function createE2eDemosDriver(
       // is a deliberate test-injection escape hatch; treat its presence as
       // equivalent to "the slug was found" so unit tests that bypass the
       // registry entirely don't trip the missing-registry red row.
-      if (demos.length === 0 && Array.isArray(input.demos)) {
+      if (demos.length === 0 && Array.isArray(input.demos) && input.demos.length > 0) {
         demos = input.demos.map((id) => ({ id, route: `/demos/${id}` }));
         slugPresentInRegistry = true;
       }

@@ -1644,6 +1644,41 @@ describe("e2e-demos driver", () => {
       "e2e:test-only/tool-rendering",
     ]);
   });
+
+  it("empty in-band input.demos does NOT suppress missing-registry red", async () => {
+    // Edge case for the in-band test-injection escape hatch: an EMPTY
+    // `input.demos: []` carries no useful payload (no demos to inject)
+    // and must NOT suppress the fail-loud missing-registry branch. If
+    // the slug is genuinely absent from the registry, the driver must
+    // still emit the synthetic red `__missing-registry` row + flip
+    // aggregate red — otherwise a misconfigured probe (e.g. yaml
+    // `demos: []` for a slug not present in registry.json) would
+    // silently render aggregate green on the dashboard despite the
+    // resolver reporting `present: false`.
+    const { browser } = makeBrowser([]);
+    const driver = createE2eDemosDriver({
+      launcher: async () => browser,
+      demosResolver: async () => ({ present: false, entries: [] }),
+    });
+    const { writer, writes } = mkWriter();
+
+    const result = await driver.run(mkCtx(writer), {
+      key: "e2e-demos:empty-inband",
+      name: "showcase-empty-inband",
+      publicUrl: "https://showcase-empty-inband.example.com",
+      demos: [],
+      shape: "package",
+    });
+
+    // Empty in-band array falls through to fail-loud branch.
+    expect(result.state).toBe("red");
+    const sig = result.signal as E2eDemosAggregateSignal;
+    expect(sig.errorDesc).toBe("registry-missing");
+
+    // Exactly ONE synthetic missing-registry row.
+    expect(writes).toHaveLength(1);
+    expect(writes[0]?.key).toBe("e2e:empty-inband/__missing-registry");
+  });
 });
 
 // --- Integration: shortest-service-first dispatch ------------------------
