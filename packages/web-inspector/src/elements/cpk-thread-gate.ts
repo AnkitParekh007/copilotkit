@@ -331,6 +331,8 @@ class CpkThreadGate extends LitElement {
 
   disconnectedCallback(): void {
     super.disconnectedCallback();
+    // Pending timers must be cleared so they cannot fire after teardown and
+    // call requestUpdate() / mutate state on a disconnected element.
     if (this._threadsGateInvalidTimer !== null) {
       clearTimeout(this._threadsGateInvalidTimer);
       this._threadsGateInvalidTimer = null;
@@ -522,8 +524,12 @@ class CpkThreadGate extends LitElement {
         clearTimeout(this._threadsUnlockingTimer);
       }
       this._threadsUnlockingTimer = setTimeout(() => {
-        this._threadsUnlocking = false;
         this._threadsUnlockingTimer = null;
+        // Defense in depth — disconnectedCallback already nulls the timer
+        // ref, but if a stale closure ever fired post-teardown we don't want
+        // to call requestUpdate() / dispatch an event on a torn-down element.
+        if (!this.isConnected) return;
+        this._threadsUnlocking = false;
         this.dispatchEvent(
           new CustomEvent("unlock", { bubbles: true, composed: true }),
         );
@@ -538,8 +544,9 @@ class CpkThreadGate extends LitElement {
         clearTimeout(this._threadsGateInvalidTimer);
       }
       this._threadsGateInvalidTimer = setTimeout(() => {
-        this._threadsGateCodeInvalid = false;
         this._threadsGateInvalidTimer = null;
+        if (!this.isConnected) return;
+        this._threadsGateCodeInvalid = false;
         this.requestUpdate();
       }, 1600);
     }

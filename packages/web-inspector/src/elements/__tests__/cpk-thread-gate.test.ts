@@ -32,6 +32,18 @@ function makeGate(): HTMLElement & GateInternals {
   return el;
 }
 
+/**
+ * Make a gate and connect it to the document so `isConnected` is true.
+ * Required for tests that drive timer callbacks — the gate's setTimeout
+ * bodies bail when `!this.isConnected` so they don't mutate state on a
+ * torn-down element.
+ */
+function makeConnectedGate(): HTMLElement & GateInternals {
+  const el = makeGate();
+  document.body.appendChild(el);
+  return el;
+}
+
 let cookieJar = "";
 let lastWrittenCookie = "";
 
@@ -92,7 +104,7 @@ describe("cpk-thread-gate", () => {
 
   it("flashes invalid-code state on a wrong code, then auto-clears after 1600ms", () => {
     installCookieMock("");
-    const gate = makeGate();
+    const gate = makeConnectedGate();
     gate._submitThreadsCode("nope");
     expect(gate._threadsGateCodeInvalid).toBe(true);
     // No cookie should have been written for an invalid code.
@@ -106,7 +118,7 @@ describe("cpk-thread-gate", () => {
 
   it("on correct code: writes the cookie immediately and dispatches `unlock` after 2000ms", () => {
     installCookieMock("");
-    const gate = makeGate();
+    const gate = makeConnectedGate();
     let unlockedCount = 0;
     gate.addEventListener("unlock", () => {
       unlockedCount++;
@@ -130,7 +142,7 @@ describe("cpk-thread-gate", () => {
 
   it("trims whitespace and is case-insensitive when comparing the access code", () => {
     installCookieMock("");
-    const gate = makeGate();
+    const gate = makeConnectedGate();
     gate._submitThreadsCode("  earlyaccess  ");
     expect(gate._threadsUnlocking).toBe(true);
     expect(lastWrittenCookie).toContain("cpk_threads_access=1");
