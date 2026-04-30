@@ -84,7 +84,7 @@ describe("ThreadStoreRegistry", () => {
     expect(registry.get("agent-1")).toBe(second);
     expect(onUnregistered).toHaveBeenCalledTimes(1);
     expect(onUnregistered).toHaveBeenCalledWith(
-      expect.objectContaining({ agentId: "agent-1" }),
+      expect.objectContaining({ agentId: "agent-1", store: first }),
     );
     expect(onRegistered).toHaveBeenCalledTimes(2);
     expect(onRegistered).toHaveBeenLastCalledWith(
@@ -132,13 +132,14 @@ describe("ThreadStoreRegistry", () => {
       core as unknown as { subscribe: (s: CopilotKitCoreSubscriber) => unknown }
     ).subscribe(subscriber);
 
-    registry.register("agent-1", makeStore());
+    const store = makeStore();
+    registry.register("agent-1", store);
     registry.unregister("agent-1");
 
     await Promise.resolve();
 
     expect(onUnregistered).toHaveBeenCalledWith(
-      expect.objectContaining({ agentId: "agent-1" }),
+      expect.objectContaining({ agentId: "agent-1", store }),
     );
   });
 
@@ -184,17 +185,21 @@ describe("ThreadStoreRegistry", () => {
     expect(registry.get("agent-1")).toBe(store);
   });
 
-  it("on replace, listeners observe the new store mapped to the id during both notifications", async () => {
+  it("on replace, listeners observe the new store mapped to the id and receive the old store on the unregistered payload", async () => {
     // Documents the registry's replace convention: the id maps to the NEW
     // store while both the unregistered (for the old store) and registered
     // (for the new store) events are dispatched. There is no intermediate
-    // "missing" state observable to listeners.
+    // "missing" state observable to listeners. The unregistered event carries
+    // the OLD store on its payload so listeners can clean up subscriptions
+    // tied to that reference without needing to capture it themselves.
     const observedDuringUnregistered: Array<ɵThreadStore | undefined> = [];
     const observedDuringRegistered: Array<ɵThreadStore | undefined> = [];
+    const unregisteredPayloadStores: Array<ɵThreadStore> = [];
 
     const subscriber: CopilotKitCoreSubscriber = {
-      onThreadStoreUnregistered: () => {
+      onThreadStoreUnregistered: ({ store }) => {
         observedDuringUnregistered.push(registry.get("agent-1"));
+        unregisteredPayloadStores.push(store);
       },
       onThreadStoreRegistered: () => {
         observedDuringRegistered.push(registry.get("agent-1"));
@@ -222,6 +227,10 @@ describe("ThreadStoreRegistry", () => {
     // registered also observes `second`.
     expect(observedDuringUnregistered[0]).toBe(second);
     expect(observedDuringRegistered[1]).toBe(second);
+
+    // The unregistered payload still carries the OLD store reference even
+    // though the registry mapping has already advanced to the new store.
+    expect(unregisteredPayloadStores).toEqual([first]);
   });
 
   it("replace fires unregistered before registered", async () => {
@@ -241,11 +250,18 @@ describe("ThreadStoreRegistry", () => {
     registry.register("agent-1", makeStore("first"));
     await Promise.resolve();
     await Promise.resolve();
+
+    // Reset so the array reflects only the replace pair, not the initial
+    // register. Without this, an implementation that swapped the local pair
+    // ordering on replace would still produce the same overall sequence and
+    // the test would not catch the regression.
+    calls.length = 0;
+
     registry.register("agent-1", makeStore("second"));
     await Promise.resolve();
     await Promise.resolve();
 
-    expect(calls).toEqual(["registered", "unregistered", "registered"]);
+    expect(calls).toEqual(["unregistered", "registered"]);
   });
 
   it("auto-unregisters thread stores when their agent is removed via onAgentsChanged", async () => {
@@ -270,7 +286,7 @@ describe("ThreadStoreRegistry", () => {
 
     expect(ck.getThreadStore("agent-going-away")).toBeUndefined();
     expect(onUnregistered).toHaveBeenCalledWith(
-      expect.objectContaining({ agentId: "agent-going-away" }),
+      expect.objectContaining({ agentId: "agent-going-away", store }),
     );
   });
 });

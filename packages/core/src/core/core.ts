@@ -173,6 +173,7 @@ export interface CopilotKitCoreSubscriber {
   onThreadStoreUnregistered?: (event: {
     copilotkit: CopilotKitCore;
     agentId: string;
+    store: ɵThreadStore;
   }) => void | Promise<void>;
   /**
    * Fired immediately before each agent run, including per-thread clones that

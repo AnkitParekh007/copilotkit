@@ -25,9 +25,13 @@ export class ThreadStoreRegistry {
       // within the unregistered handler will observe the new store. The
       // intent of the unregistered event is "the previous store binding is
       // gone"; the new binding is observable on the subsequent registered
-      // event.
+      // event. Listeners that need to clean up subscriptions tied to the old
+      // store reference must use the `store` field on the unregistered event
+      // payload, since `get(agentId)` already returns the new store at that
+      // point.
+      const oldStore = existing;
       this._stores[agentId] = store;
-      void this.notifyUnregistered(agentId);
+      void this.notifyUnregistered(agentId, oldStore);
       void this.notifyRegistered(agentId, store);
       return;
     }
@@ -36,9 +40,10 @@ export class ThreadStoreRegistry {
   }
 
   unregister(agentId: string): void {
-    if (!(agentId in this._stores)) return;
+    const oldStore = this._stores[agentId];
+    if (oldStore === undefined) return;
     delete this._stores[agentId];
-    void this.notifyUnregistered(agentId);
+    void this.notifyUnregistered(agentId, oldStore);
   }
 
   get(agentId: string): ɵThreadStore | undefined {
@@ -66,7 +71,10 @@ export class ThreadStoreRegistry {
     );
   }
 
-  private async notifyUnregistered(agentId: string): Promise<void> {
+  private async notifyUnregistered(
+    agentId: string,
+    store: ɵThreadStore,
+  ): Promise<void> {
     await (
       this.core as unknown as CopilotKitCoreFriendsAccess
     ).notifySubscribers(
@@ -74,6 +82,7 @@ export class ThreadStoreRegistry {
         subscriber.onThreadStoreUnregistered?.({
           copilotkit: this.core,
           agentId,
+          store,
         }),
       "Subscriber onThreadStoreUnregistered error:",
     );
