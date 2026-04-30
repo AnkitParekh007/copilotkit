@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { InMemoryAgentRunner, type InMemoryThread } from "../in-memory";
 import {
   AbstractAgent,
@@ -488,8 +488,9 @@ describe("InMemoryAgentRunner — listThreads / getThreadMessages", () => {
     it("returns threads sorted most-recently-updated first", async () => {
       // Force a strictly-later timestamp deterministically rather than relying
       // on a 5ms real-time sleep. The runner records Date.now() inside the
-      // synchronous run path, so a one-shot mock that returns "now + 1000ms"
-      // for the next createdAt sample is enough.
+      // synchronous run path, so spying on Date.now to return "baseline + 1000ms"
+      // is enough — the spy stays installed for every Date.now() call in the
+      // run path until restored in `finally`.
       const baseline = Date.now();
       const dateNowSpy = vi
         .spyOn(Date, "now")
@@ -809,5 +810,191 @@ describe("InMemoryAgentRunner — listThreads / getThreadMessages", () => {
         });
       }
     });
+
+    it("returns null for a STATE_DELTA-only stream (compactEvents does not synthesize a snapshot)", async () => {
+      // The runner's getThreadState JSDoc previously claimed `compactEvents`
+      // consolidates STATE_DELTA into a synthetic STATE_SNAPSHOT. It does
+      // NOT — `compactEvents` only consolidates streaming text/tool deltas.
+      // This test pins that behavior so the comment and code stay aligned.
+      const stateAgent = new TestAgent(
+        [
+          {
+            type: EventType.STATE_DELTA,
+            delta: [{ op: "add", path: "/counter", value: 1 }],
+          } as unknown as BaseEvent,
+        ],
+        true,
+      );
+      const threadId = "thread-state-delta-only";
+      await firstValueFrom(
+        runner
+          .run({
+            threadId,
+            agent: stateAgent,
+            input: {
+              threadId,
+              runId: "run-state-delta-only",
+              messages: [],
+              state: {},
+              tools: [],
+              context: [],
+            },
+          })
+          .pipe(toArray()),
+      );
+
+      expect(runner.getThreadState(threadId)).toBeNull();
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Stop / run race regression test.
+// Pins that a `stop()` followed immediately by a `run()` on the same threadId
+// does not have its store fields wiped by the previous runAgent's async
+// cleanup. Before the fix, stop() flipped isRunning=false synchronously,
+// which let the new run pass the guard, while the still-finalizing previous
+// runAgent then nulled out store.runSubject/store.agent/etc. The fixed
+// run() guard checks runSubject===null too, so the new run starts only
+// after the previous run has fully drained.
+// ---------------------------------------------------------------------------
+
+describe("InMemoryAgentRunner — stop/run race", () => {
+  class LongRunningAgent extends AbstractAgent {
+    private shouldStop = false;
+    constructor(public readonly tag: string) {
+      super({ agentId: tag });
+    }
+    async runAgent(
+      input: RunAgentInput,
+      options: { onEvent: (e: { event: BaseEvent }) => void },
+    ): Promise<void> {
+      this.shouldStop = false;
+      options.onEvent({
+        event: {
+          type: EventType.RUN_STARTED,
+          threadId: input.threadId,
+          runId: input.runId,
+        } as RunStartedEvent,
+      });
+      while (!this.shouldStop) {
+        await new Promise((r) => setTimeout(r, 5));
+      }
+    }
+    abortRun(): void {
+      this.shouldStop = true;
+    }
+    clone(): AbstractAgent {
+      return new LongRunningAgent(this.tag);
+    }
+    protected run(): ReturnType<AbstractAgent["run"]> {
+      return EMPTY;
+    }
+  }
+
+  it("stop() then run() on the same threadId leaves the new run intact", async () => {
+    const runner = new InMemoryAgentRunner();
+    runner.clearThreads();
+    const threadId = "stop-run-race";
+
+    const firstAgent = new LongRunningAgent("first");
+    const firstObservable = runner.run({
+      threadId,
+      agent: firstAgent,
+      input: {
+        threadId,
+        runId: "run-first",
+        messages: [],
+        state: {},
+        tools: [],
+        context: [],
+      },
+    });
+    const firstCollected = firstValueFrom(firstObservable.pipe(toArray()));
+
+    // Let the first run start emitting.
+    await new Promise((r) => setTimeout(r, 10));
+
+    const stopped = await runner.stop({ threadId });
+    expect(stopped).toBe(true);
+
+    // Wait for the first run's stream to fully complete (drain).
+    await firstCollected;
+
+    // Now start a fresh run for the same threadId. With the fix, the guard
+    // (`store.runSubject === null` after drain) lets this through, and the
+    // already-finalized previous runAgent's cleanup cannot wipe the new
+    // run's fields because it ran first.
+    const secondAgent = new LongRunningAgent("second");
+    const secondObservable = runner.run({
+      threadId,
+      agent: secondAgent,
+      input: {
+        threadId,
+        runId: "run-second",
+        messages: [],
+        state: {},
+        tools: [],
+        context: [],
+      },
+    });
+    const secondCollected = firstValueFrom(secondObservable.pipe(toArray()));
+
+    // Let the second run start emitting.
+    await new Promise((r) => setTimeout(r, 10));
+    expect(await runner.isRunning({ threadId })).toBe(true);
+
+    // Stop the second run cleanly.
+    await runner.stop({ threadId });
+    const secondEvents = await secondCollected;
+
+    // The second run produced its own RUN_STARTED with runId="run-second"
+    // — proof that its fields survived the previous run's cleanup.
+    const runStarted = secondEvents.find(
+      (e): e is RunStartedEvent => e.type === EventType.RUN_STARTED,
+    );
+    expect(runStarted).toBeDefined();
+    expect(runStarted!.runId).toBe("run-second");
+  });
+
+  it("stop() then run() before drain throws — guard catches in-flight cleanup race", async () => {
+    const runner = new InMemoryAgentRunner();
+    runner.clearThreads();
+    const threadId = "stop-run-race-immediate";
+
+    const firstAgent = new LongRunningAgent("first");
+    runner.run({
+      threadId,
+      agent: firstAgent,
+      input: {
+        threadId,
+        runId: "run-first",
+        messages: [],
+        state: {},
+        tools: [],
+        context: [],
+      },
+    });
+
+    await new Promise((r) => setTimeout(r, 10));
+    await runner.stop({ threadId });
+
+    // We did NOT await the first run's drain. The fixed guard rejects an
+    // immediate second run() because runSubject is still non-null.
+    const secondAgent = new LongRunningAgent("second");
+    expect(() =>
+      runner.run({
+        threadId,
+        agent: secondAgent,
+        input: {
+          threadId,
+          runId: "run-second",
+          messages: [],
+          state: {},
+          tools: [],
+          context: [],
+        },
+      }),
+    ).toThrow(/already running/);
   });
 });

@@ -13,7 +13,7 @@ import type {
   RunStartedEvent,
 } from "@ag-ui/client";
 import { EventType, compactEvents } from "@ag-ui/client";
-import { finalizeRunEvents } from "@copilotkit/shared";
+import { finalizeRunEvents, logger } from "@copilotkit/shared";
 
 interface HistoricRun {
   threadId: string;
@@ -85,7 +85,16 @@ export class InMemoryAgentRunner extends AgentRunner {
     }
     const store = existingStore; // Now store is const and non-null
 
-    if (store.isRunning) {
+    // Guard against starting a new run before the previous one has fully
+    // drained. `isRunning` alone is not enough: `stop()` does not mutate
+    // store flags synchronously (it can't, without racing the in-flight
+    // runAgent's async cleanup), so a `stop()` followed immediately by a
+    // `run()` would otherwise pass an `isRunning === false` check while
+    // the previous runAgent is still finalizing — and its post-await
+    // cleanup would then null out the new run's subject/agent fields.
+    // `runSubject === null` is the post-cleanup signal: the previous
+    // runAgent has fully run its finally-equivalent block.
+    if (store.isRunning || store.runSubject !== null) {
       throw new Error("Thread already running");
     }
     store.isRunning = true;
@@ -124,6 +133,29 @@ export class InMemoryAgentRunner extends AgentRunner {
     // Create a subject for run() return value
     const runSubject = new ReplaySubject<BaseEvent>(Infinity);
     store.runSubject = runSubject;
+
+    // Identity-checked cleanup. Only clears store fields that still point
+    // at THIS run's owned objects, so a `stop()` + `run()` race that swaps
+    // in a fresh run mid-await cannot have its fields wiped by the
+    // previous run's finalization.
+    const cleanupOwnedFields = () => {
+      if (store.runSubject === runSubject) store.runSubject = null;
+      if (store.subject === nextSubject) store.subject = null;
+      if (store.currentEvents === currentRunEvents) store.currentEvents = null;
+      if (store.agent === request.agent) store.agent = null;
+      if (store.currentRunId === request.input.runId) {
+        store.currentRunId = null;
+      }
+      // Only flip the run-state booleans if no replacement run has taken
+      // over (signalled by the runSubject pointer being equal to ours).
+      // We detect that here by checking the same field — if it was equal,
+      // it was just nulled above, so the previous-line `=== runSubject`
+      // already implies this run still owned the slot.
+      if (store.runSubject === null && store.subject === null) {
+        store.isRunning = false;
+        store.stopRequested = false;
+      }
+    };
 
     // Helper function to run the agent and handle errors
     const runAgent = async () => {
@@ -186,14 +218,18 @@ export class InMemoryAgentRunner extends AgentRunner {
           nextSubject.next(event);
         }
 
-        // Store the completed run in memory with ONLY its events
-        if (store.currentRunId) {
+        // Store the completed run in memory with ONLY its events. We use
+        // `request.input.runId` rather than `store.currentRunId` so that
+        // any future race (a new run swapping in mid-await despite the
+        // guard) cannot cause us to attribute this run's events to the
+        // new run's id.
+        if (request.input.runId) {
           // Compact the events before storing (like SQLite does)
           const compactedEvents = compactEvents(currentRunEvents);
 
           store.historicRuns.push({
             threadId: request.threadId,
-            runId: store.currentRunId,
+            runId: request.input.runId,
             agentId: request.agent.agentId ?? "default",
             parentRunId,
             events: compactedEvents,
@@ -205,13 +241,9 @@ export class InMemoryAgentRunner extends AgentRunner {
           });
         }
 
-        // Complete the run
-        store.currentEvents = null;
-        store.currentRunId = null;
-        store.agent = null;
-        store.runSubject = null;
-        store.stopRequested = false;
-        store.isRunning = false;
+        // Complete the run (identity-checked so a concurrent `stop()` +
+        // `run()` swap can't cause us to wipe the new run's fields).
+        cleanupOwnedFields();
         runSubject.complete();
         nextSubject.complete();
       } catch (error) {
@@ -226,13 +258,15 @@ export class InMemoryAgentRunner extends AgentRunner {
           nextSubject.next(event);
         }
 
-        // Store the run even if it failed (partial events)
-        if (store.currentRunId && currentRunEvents.length > 0) {
+        // Store the run even if it failed (partial events). Use
+        // `request.input.runId` so a swapped-in concurrent run cannot
+        // alter the runId we attribute these events to.
+        if (request.input.runId && currentRunEvents.length > 0) {
           // Compact the events before storing (like SQLite does)
           const compactedEvents = compactEvents(currentRunEvents);
           store.historicRuns.push({
             threadId: request.threadId,
-            runId: store.currentRunId,
+            runId: request.input.runId,
             agentId: request.agent.agentId ?? "default",
             parentRunId,
             events: compactedEvents,
@@ -243,13 +277,8 @@ export class InMemoryAgentRunner extends AgentRunner {
           });
         }
 
-        // Complete the run
-        store.currentEvents = null;
-        store.currentRunId = null;
-        store.agent = null;
-        store.runSubject = null;
-        store.stopRequested = false;
-        store.isRunning = false;
+        // Complete the run (identity-checked, see success path).
+        cleanupOwnedFields();
         runSubject.complete();
         nextSubject.complete();
       }
@@ -266,8 +295,19 @@ export class InMemoryAgentRunner extends AgentRunner {
       });
     }
 
-    // Start the agent execution immediately (not lazily)
-    runAgent();
+    // Start the agent execution immediately (not lazily). `runAgent` is an
+    // async function whose synchronous setup/teardown lives outside the
+    // inner try/catch, so a throw from those branches would otherwise
+    // become an unhandled promise rejection. The `.catch` here is the
+    // last-resort backstop — the inner try/catch already handles all
+    // expected error paths.
+    runAgent().catch((err) => {
+      logger.error(
+        "[InMemoryAgentRunner] runAgent failed",
+        { threadId: request.threadId },
+        err,
+      );
+    });
 
     // Return the run subject (only agent events, no injected messages)
     return runSubject.asObservable();
@@ -331,33 +371,44 @@ export class InMemoryAgentRunner extends AgentRunner {
     return Promise.resolve(store?.isRunning ?? false);
   }
 
-  stop(request: AgentRunnerStopRequest): Promise<boolean | undefined> {
+  async stop(
+    request: AgentRunnerStopRequest,
+  ): Promise<boolean | undefined> {
     const store = GLOBAL_STORE.get(request.threadId);
-    if (!store || !store.isRunning) {
-      return Promise.resolve(false);
-    }
-    if (store.stopRequested) {
-      return Promise.resolve(false);
-    }
+    if (!store) return false;
 
-    store.stopRequested = true;
-    store.isRunning = false;
+    // Idempotent on repeat calls. Check `stopRequested` BEFORE any other
+    // gate so a second `stop()` for the same in-flight run is a clean
+    // no-op (returns false) rather than re-entering the abort path.
+    if (store.stopRequested) return false;
+    if (!store.isRunning) return false;
 
     const agent = store.agent;
-    if (!agent) {
-      store.stopRequested = false;
-      store.isRunning = false;
-      return Promise.resolve(false);
-    }
+    if (!agent) return false;
+
+    // Mark stop as requested but do NOT mutate `isRunning` synchronously.
+    // Doing so would let a follow-up `run()` for the same threadId pass
+    // its `!isRunning` guard while the previous runAgent is still
+    // finalizing — and the previous runAgent's post-await cleanup would
+    // then null out the fresh run's subject/agent fields. The run-state
+    // booleans are owned by `runAgent`'s identity-checked cleanup; this
+    // function only signals intent.
+    store.stopRequested = true;
 
     try {
-      agent.abortRun();
-      return Promise.resolve(true);
+      await agent.abortRun();
+      return true;
     } catch (error) {
-      console.error("Failed to abort agent run", error);
+      // Async rejection from `abortRun` would otherwise be lost. Surface
+      // it as an error log scoped to this thread, then unwind the
+      // stop-request flag so a subsequent `stop()` can retry.
+      logger.error(
+        "[InMemoryAgentRunner] Failed to abort agent run",
+        { threadId: request.threadId },
+        error,
+      );
       store.stopRequested = false;
-      store.isRunning = true;
-      return Promise.resolve(false);
+      return false;
     }
   }
 
@@ -404,8 +455,9 @@ export class InMemoryAgentRunner extends AgentRunner {
   getThreadMessages(threadId: string): Message[] {
     const store = GLOBAL_STORE.get(threadId);
     if (!store || store.historicRuns.length === 0) return [];
-    // The last run's snapshot has the complete conversation history
-    return store.historicRuns[store.historicRuns.length - 1]!.messages;
+    // The last run's snapshot has the complete conversation history.
+    // Return a shallow copy so callers cannot mutate internal state.
+    return [...store.historicRuns[store.historicRuns.length - 1]!.messages];
   }
 
   /**
@@ -415,22 +467,34 @@ export class InMemoryAgentRunner extends AgentRunner {
    * Intelligence platform is not configured. The compaction logic matches the
    * SQLite runner and the connection-replay path in {@link connect}, so the
    * stream a late-joining inspector sees matches what this method returns.
+   *
+   * Each `HistoricRun.events` array is already individually compacted at run
+   * end (see the `runAgent` success/error paths). The second pass here is
+   * deliberate: per-run compaction cannot consolidate across run boundaries
+   * (e.g. multiple STATE_SNAPSHOT events from different runs), and this is
+   * what the connection-replay path in {@link connect} also does — keeping
+   * the read shape identical for live and post-hoc consumers. `compactEvents`
+   * is idempotent for already-compacted single-run inputs, so this does not
+   * lose information. `compactEvents` returns a fresh array, so callers
+   * cannot mutate internal state via this method.
    */
   getThreadEvents(threadId: string): BaseEvent[] {
     const store = GLOBAL_STORE.get(threadId);
     if (!store || store.historicRuns.length === 0) return [];
     const all: BaseEvent[] = [];
     for (const run of store.historicRuns) all.push(...run.events);
-    return compactEvents(all);
+    return [...compactEvents(all)];
   }
 
   /**
    * Returns the agent state snapshot for a thread.
    *
-   * Derived from the last `STATE_SNAPSHOT` in the compacted event stream. The
-   * AG-UI `compactEvents` helper consolidates STATE_DELTA events and produces
-   * a single trailing STATE_SNAPSHOT when state changes exist, so this is a
-   * faithful view of state at the end of the most recent run.
+   * Derived from the last `STATE_SNAPSHOT` in the compacted event stream.
+   * Note: AG-UI's `compactEvents` helper consolidates streaming text/tool
+   * deltas but does NOT fold STATE_DELTA events into a synthetic
+   * STATE_SNAPSHOT. So this method returns state only for runs that
+   * actually emit STATE_SNAPSHOT. Threads whose only state-change vehicle
+   * is STATE_DELTA will return `null` here.
    *
    * Returns `null` when the thread has never emitted a STATE_SNAPSHOT.
    */
