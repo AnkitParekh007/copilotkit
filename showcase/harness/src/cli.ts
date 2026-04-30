@@ -18,6 +18,7 @@ import { fixturesValidate, formatReport } from "./cli/fixtures.js";
 import { doctor } from "./cli/doctor.js";
 import { aimockRebuild } from "./cli/aimock-rebuild.js";
 import type { TestLevel } from "./cli/targets.js";
+import { registerEvalCommand } from "./cli/eval/index.js";
 
 const program = new Command();
 
@@ -235,6 +236,9 @@ program
       `Visit the showcase dashboard at ${config.dashboardUrl} for test results and status.`,
     );
   });
+
+// ── eval ───────────────────────────────────────────────────────────────
+registerEvalCommand(program);
 
 // ── error handling & entry point ────────────────────────────────────────
 process.on("unhandledRejection", (err) => {

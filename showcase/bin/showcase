@@ -109,6 +109,9 @@ case "$subcmd" in
     [ -z "$subcmd" ] && exit 1
     exit 0
     ;;
+  eval)
+    exec npx tsx "$SHOWCASE_ROOT/harness/src/cli.ts" eval "$@"
+    ;;
   *)
     # Convert dashes to underscores for function lookup: foo-bar → cmd_foo_bar
     func_name="cmd_${subcmd//-/_}"
