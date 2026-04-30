@@ -19,6 +19,7 @@ import {
 import { z } from "zod";
 import { MeetingTimePicker } from "./MeetingTimePicker";
 import type { MeetingTimePickerStatus } from "./MeetingTimePicker";
+import { PieChart } from "./PieChart";
 
 interface HitlState {
   status: MeetingTimePickerStatus;
@@ -61,6 +62,39 @@ export function ChatScreen() {
     },
     [isDark],
   );
+
+  // ── Controlled Generative UI: Pie Chart ─────────────────────────────────
+  const [charts, setCharts] = useState<
+    Array<{
+      id: string;
+      title: string;
+      description: string;
+      data: Array<{ label: string; value: number }>;
+    }>
+  >([]);
+
+  useFrontendTool({
+    name: "pieChart",
+    description:
+      "Use this tool to display a pie chart in the chat. Pass a title, description, and data array with label/value pairs.",
+    parameters: z.object({
+      title: z.string().describe("Chart title"),
+      description: z.string().describe("Brief description or subtitle"),
+      data: z.array(
+        z.object({
+          label: z.string(),
+          value: z.number(),
+        }),
+      ),
+    }),
+    handler: async (args) => {
+      setCharts((prev) => [
+        ...prev,
+        { id: `chart-${Date.now()}`, ...args },
+      ]);
+      return "Pie chart rendered successfully.";
+    },
+  });
 
   // ── HITL: Schedule Meeting ──────────────────────────────────────────────
   const [hitl, setHitl] = useState<HitlState | null>(null);
@@ -111,21 +145,26 @@ export function ChatScreen() {
 
   const handleNewThread = useCallback(() => {
     setThreadId(generateThreadId());
+    setCharts([]);
     setHitl(null);
     respondRef.current = null;
     setInputText("");
   }, []);
 
-  // ── Messages + HITL card as FlatList items ─────────────────────────────
+  // ── Messages + inline cards as FlatList items ──────────────────────────
   const listItems = React.useMemo(() => {
     const filtered = messages.filter(
       (m: any) => m.role === "user" || (m.role === "assistant" && m.content),
     );
+    const items: any[] = [
+      ...filtered,
+      ...charts.map((c) => ({ ...c, role: "chart" })),
+    ];
     if (hitl) {
-      return [...filtered, { id: "__hitl__", role: "hitl" }];
+      items.push({ id: "__hitl__", role: "hitl" });
     }
-    return filtered;
-  }, [messages, hitl]);
+    return items;
+  }, [messages, charts, hitl]);
 
   // ── Send message ───────────────────────────────────────────────────────
   const handleSend = useCallback(async () => {
@@ -162,6 +201,17 @@ export function ChatScreen() {
   // ── Render items ───────────────────────────────────────────────────────
   const renderItem = useCallback(
     ({ item }: { item: any }) => {
+      if (item.role === "chart") {
+        return (
+          <PieChart
+            title={item.title}
+            description={item.description}
+            data={item.data}
+            theme={theme}
+          />
+        );
+      }
+
       if (item.role === "hitl" && hitl) {
         return (
           <MeetingTimePicker
@@ -256,6 +306,18 @@ export function ChatScreen() {
             >
               <Text style={[styles.suggestionText, { color: theme.primary }]}>
                 Schedule Meeting (HITL)
+              </Text>
+            </Pressable>
+            <Pressable
+              style={[styles.suggestionPill, { backgroundColor: theme.pillBg }]}
+              onPress={() =>
+                sendSuggestion(
+                  "Show me a pie chart of revenue distribution by category. Make up some realistic sample data, then render it with the pieChart component.",
+                )
+              }
+            >
+              <Text style={[styles.suggestionText, { color: theme.primary }]}>
+                Pie Chart (Generative UI)
               </Text>
             </Pressable>
             <Pressable
