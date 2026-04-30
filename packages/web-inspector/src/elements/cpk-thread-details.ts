@@ -819,6 +819,11 @@ class CpkThreadDetails extends LitElement {
       // across every thread on the same agent. Messages has no sentinel —
       // any non-200 there is a hard error.
       if (res.status === 501 && tab !== "messages") {
+        // Race guard: if a fast threadId switch aborted this fetch mid-flight,
+        // the newer fetch may have already resolved a valid 200 and populated
+        // _fetchedEvents / _fetchedState. Setting the not-available sentinel
+        // here would hide the newer thread's valid events/state.
+        if (controller.signal.aborted) return;
         if (tab === "events") {
           this._eventsNotAvailable = true;
           this._fetchedEvents = null;
@@ -846,6 +851,11 @@ class CpkThreadDetails extends LitElement {
       }
     } catch (err) {
       if (err instanceof Error && err.name === "AbortError") return;
+      // Race guard: if a fast threadId switch aborted this fetch mid-flight
+      // and the fetch then failed for a non-Abort reason (network reset,
+      // malformed JSON), we'd otherwise stomp the newer fetch's already-
+      // loaded state with this older fetch's error/fallback.
+      if (controller.signal.aborted) return;
       // Surface a breadcrumb (with the raw err) in addition to the user-visible
       // error so failures (network issues, 5xx, malformed JSON) leave a console
       // trail. Don't leak err.message into the UI: the raw message can include

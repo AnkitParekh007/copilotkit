@@ -25,6 +25,9 @@ type DetailsInternals = {
   _loadingMessages: boolean;
   _loadingEvents: boolean;
   _loadingState: boolean;
+  _messagesError: string | null;
+  _eventsError: string | null;
+  _stateError: string | null;
   // Private methods we drive directly. updated() is Lit's protected lifecycle
   // hook; calling it manually is the equivalent of "the prop changed and Lit
   // committed".
@@ -421,5 +424,154 @@ describe("cpk-thread-details", () => {
     expect(events).toHaveLength(1);
     expect(events[0]!.type).toBe("T2_EVENT");
     expect(el._fetchedState).toEqual({ from: "t2" });
+  });
+
+  it("does not let an older fetch's non-Abort error clobber a newer thread's loaded data (CR R4 #5)", async () => {
+    // Round-3 fix #9 covered the success path: an older fetch's resumed
+    // microtask after a fast threadId switch must not overwrite the newer
+    // thread's already-loaded data. This is the parallel error-path
+    // regression: if the older fetch's response throws (e.g. malformed JSON,
+    // network reset) AFTER the abort, the catch block must also bail
+    // BEFORE writing _conversation/_fetchedEvents/_fetchedState =
+    // fallback or the friendly error.
+    const el = makeEl();
+    el.runtimeUrl = "http://runtime.test";
+
+    el.threadId = "t1";
+    el.updated(new Map([["threadId", null]]));
+    expect(mock.calls).toHaveLength(3);
+
+    const t1Messages = mock.calls.find(
+      (c) => c.url === "http://runtime.test/threads/t1/messages",
+    )!;
+    const t1Events = mock.calls.find(
+      (c) => c.url === "http://runtime.test/threads/t1/events",
+    )!;
+    const t1State = mock.calls.find(
+      (c) => c.url === "http://runtime.test/threads/t1/state",
+    )!;
+
+    // Resolve t1's responses with bodies that will THROW during res.json()
+    // parsing — that throw bubbles into the catch block. The body bytes
+    // arrive before the abort, but the parse only resumes after the
+    // microtask drain (after we switch to t2 and abort t1).
+    t1Messages.resolve(
+      new Response("not-valid-json", {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    t1Events.resolve(
+      new Response("not-valid-json", {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    t1State.resolve(
+      new Response("not-valid-json", {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+
+    // Switch to t2, which aborts t1's controllers, then resolve t2's with
+    // valid JSON.
+    el.threadId = "t2";
+    el.updated(new Map([["threadId", "t1"]]));
+    expect(mock.calls).toHaveLength(6);
+    const t2Messages = mock.calls.find(
+      (c) => c.url === "http://runtime.test/threads/t2/messages",
+    )!;
+    const t2Events = mock.calls.find(
+      (c) => c.url === "http://runtime.test/threads/t2/events",
+    )!;
+    const t2State = mock.calls.find(
+      (c) => c.url === "http://runtime.test/threads/t2/state",
+    )!;
+    t2Messages.resolve(
+      jsonResponse({
+        messages: [{ id: "m2", role: "user", content: "FROM T2" }],
+      }),
+    );
+    t2Events.resolve(
+      jsonResponse({ events: [{ type: "T2_EVENT", timestamp: 2 }] }),
+    );
+    t2State.resolve(jsonResponse({ state: { from: "t2" } }));
+
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+
+    // t1's catch must have bailed via the controller.signal.aborted check
+    // BEFORE writing the friendly error or the fallback. So t2's loaded
+    // data must remain intact AND the error fields must be null.
+    const conv = el._conversation as Array<{ content: string }>;
+    expect(conv).toHaveLength(1);
+    expect(conv[0]!.content).toBe("FROM T2");
+    const events = el._fetchedEvents as Array<{ type: string }>;
+    expect(events).toHaveLength(1);
+    expect(events[0]!.type).toBe("T2_EVENT");
+    expect(el._fetchedState).toEqual({ from: "t2" });
+    expect(el._messagesError).toBeNull();
+    expect(el._eventsError).toBeNull();
+    expect(el._stateError).toBeNull();
+  });
+
+  it("does not let an older 501 response set _eventsNotAvailable for the newer thread (CR R4 #7)", async () => {
+    // Same race shape as #5 but on the 501 branch. If t1's fetch returns
+    // 501 AFTER the threadId switch, the 501 sentinel write must bail via
+    // the controller.signal.aborted check; otherwise the now-current t2's
+    // valid events would be hidden behind _eventsNotAvailable=true.
+    const el = makeEl();
+    el.runtimeUrl = "http://runtime.test";
+
+    el.threadId = "t1";
+    el.updated(new Map([["threadId", null]]));
+
+    const t1Events = mock.calls.find(
+      (c) => c.url === "http://runtime.test/threads/t1/events",
+    )!;
+    const t1Messages = mock.calls.find(
+      (c) => c.url === "http://runtime.test/threads/t1/messages",
+    )!;
+    const t1State = mock.calls.find(
+      (c) => c.url === "http://runtime.test/threads/t1/state",
+    )!;
+
+    // Pre-resolve t1's events with 501. The status check comes BEFORE
+    // res.json(), but is still inside the same `await fetch(...)` chain
+    // and resumes as a microtask after we switch threads.
+    t1Events.resolve(new Response(null, { status: 501 }));
+    // Resolve the others as well so no unhandled rejection fires.
+    t1Messages.resolve(jsonResponse({ messages: [] }));
+    t1State.resolve(jsonResponse({ state: null }));
+
+    // Switch to t2 — aborts t1's controllers — then resolve t2's events
+    // with a valid 200.
+    el.threadId = "t2";
+    el.updated(new Map([["threadId", "t1"]]));
+    const t2Events = mock.calls.find(
+      (c) => c.url === "http://runtime.test/threads/t2/events",
+    )!;
+    const t2Messages = mock.calls.find(
+      (c) => c.url === "http://runtime.test/threads/t2/messages",
+    )!;
+    const t2State = mock.calls.find(
+      (c) => c.url === "http://runtime.test/threads/t2/state",
+    )!;
+    t2Events.resolve(
+      jsonResponse({ events: [{ type: "T2_EVENT", timestamp: 2 }] }),
+    );
+    t2Messages.resolve(jsonResponse({ messages: [] }));
+    t2State.resolve(jsonResponse({ state: null }));
+
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+
+    // t1's 501 path must have bailed via the aborted check. Otherwise t2's
+    // valid events would be invisible behind _eventsNotAvailable=true.
+    expect(el._eventsNotAvailable).toBe(false);
+    const events = el._fetchedEvents as Array<{ type: string }>;
+    expect(events).toHaveLength(1);
+    expect(events[0]!.type).toBe("T2_EVENT");
   });
 });

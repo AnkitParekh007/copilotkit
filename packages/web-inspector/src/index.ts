@@ -364,7 +364,7 @@ export class WebInspectorElement extends LitElement {
     }
     const sub = store.select(ɵselectThreads).subscribe((threads) => {
       this._threadsByAgent.set(agentId, threads as ɵThread[]);
-      this._threads = Array.from(this._threadsByAgent.values()).flat();
+      this._threads = this.flattenSortedThreads();
       this.autoSelectLatestThread();
       this.requestUpdate();
     });
@@ -372,8 +372,29 @@ export class WebInspectorElement extends LitElement {
     // Populate immediately from current state
     const threads = ɵselectThreads(store.getState());
     this._threadsByAgent.set(agentId, threads);
-    this._threads = Array.from(this._threadsByAgent.values()).flat();
+    this._threads = this.flattenSortedThreads();
     this.autoSelectLatestThread();
+  }
+
+  /**
+   * Flatten the per-agent thread map into a single list sorted by updatedAt
+   * desc. Multi-agent users see threads chronologically across all agents
+   * rather than grouped by agent (Map insertion order). NaN-safe: invalid or
+   * missing updatedAt timestamps sort last.
+   */
+  private flattenSortedThreads(): ɵThread[] {
+    return Array.from(this._threadsByAgent.values())
+      .flat()
+      .sort((a, b) => {
+        const ta = new Date(a.updatedAt).getTime();
+        const tb = new Date(b.updatedAt).getTime();
+        const aValid = Number.isFinite(ta);
+        const bValid = Number.isFinite(tb);
+        if (!aValid && !bValid) return 0;
+        if (!aValid) return 1;
+        if (!bValid) return -1;
+        return tb - ta;
+      });
   }
 
   private autoSelectLatestThread(): void {
@@ -389,23 +410,10 @@ export class WebInspectorElement extends LitElement {
       this.selectedThreadId != null &&
       this._threads.some((t) => t.id === this.selectedThreadId);
     if (!stillValid) {
-      // _threads is concatenated from per-agent lists in Map insertion order;
-      // each per-agent slice is most-recent-first, but the overall array is
-      // not globally sorted. Sort by updatedAt desc so we pick the latest
-      // thread across ALL agents, not the latest of whichever agent happened
-      // to be inserted first.
-      const sorted = [...this._threads].sort((a, b) => {
-        const ta = new Date(a.updatedAt).getTime();
-        const tb = new Date(b.updatedAt).getTime();
-        // NaN-safe: missing/invalid updatedAt sorts last.
-        const aValid = Number.isFinite(ta);
-        const bValid = Number.isFinite(tb);
-        if (!aValid && !bValid) return 0;
-        if (!aValid) return 1;
-        if (!bValid) return -1;
-        return tb - ta;
-      });
-      this.selectedThreadId = sorted[0]!.id;
+      // _threads is globally sorted by updatedAt desc (see
+      // flattenSortedThreads), so the head is the latest thread across all
+      // agents.
+      this.selectedThreadId = this._threads[0]!.id;
     }
   }
 
@@ -519,26 +527,33 @@ export class WebInspectorElement extends LitElement {
     this.coreSubscriber = {
       onRuntimeConnectionStatusChanged: ({ status }) => {
         this.runtimeStatus = status;
-        if (status === "connected") {
-          // setRuntimeUrl() triggers updateRuntimeConnection which fires
-          // this handler, so this is also the recovery path for agents
-          // that were registered before runtimeUrl was set (and therefore
-          // had ensureOwnedThreadStore() early-return).
-          const currentCore = this.core;
-          if (currentCore) {
-            for (const agent of Object.values(currentCore.agents)) {
-              if (agent?.agentId && !this._ownedThreadStores.has(agent.agentId)) {
-                this.ensureOwnedThreadStore(agent.agentId);
-              }
+        if (status !== "connected") {
+          // Clear stale thread data immediately when the server goes away or
+          // is being re-established. Backfill below recreates owned stores for
+          // the new runtime; their subscriptions will repopulate _threads.
+          this._threadsByAgent.clear();
+          this._threads = [];
+        }
+        // Backfill owned stores any time the runtime has a URL set, not just
+        // on "connected". setRuntimeUrl() triggers updateRuntimeConnection,
+        // which transitions the status to "connecting" first; if the runtime
+        // never reaches "connected" (stays connecting, or transitions to
+        // "error"), agents registered before runtimeUrl was set would never
+        // get their stores backfilled. The check below covers all non-
+        // disconnected states so the recovery fires as soon as runtimeUrl is
+        // observable on `core`.
+        const currentCore = this.core;
+        if (status !== "disconnected" && currentCore?.runtimeUrl) {
+          for (const agent of Object.values(currentCore.agents)) {
+            if (agent?.agentId && !this._ownedThreadStores.has(agent.agentId)) {
+              this.ensureOwnedThreadStore(agent.agentId);
             }
           }
+        }
+        if (status === "connected") {
           for (const agentId of this._ownedThreadStores.keys()) {
             this.refreshOwnedThreadStore(agentId);
           }
-        } else {
-          // Clear stale thread data immediately when the server goes away
-          this._threadsByAgent.clear();
-          this._threads = [];
         }
         this.requestUpdate();
       },
@@ -589,7 +604,7 @@ export class WebInspectorElement extends LitElement {
           this._threadStoreSubscriptions.delete(agentId);
         }
         this._threadsByAgent.delete(agentId);
-        this._threads = Array.from(this._threadsByAgent.values()).flat();
+        this._threads = this.flattenSortedThreads();
         // Only stop+delete if the entry we own matches the store core just
         // unregistered. A different store (e.g. one a consumer registered via
         // useThreads()) is none of our business to stop.
@@ -683,17 +698,33 @@ export class WebInspectorElement extends LitElement {
       this.ensureOwnedThreadStore(agent.agentId);
     }
 
+    let removedAnyThreadsByAgent = false;
     for (const agentId of Array.from(this.agentSubscriptions.keys())) {
       if (!seenAgentIds.has(agentId)) {
         this.unsubscribeFromAgent(agentId);
         this.agentEvents.delete(agentId);
         this.agentMessages.delete(agentId);
         this.agentStates.delete(agentId);
+        // Drop the per-agent thread slice so removed agents don't linger in the
+        // flattened _threads list. Owned stores are NOT torn down here (see
+        // comment below), but the cached thread slice keyed by agentId must be
+        // dropped to keep the rendered list in sync with core.agents.
+        if (this._threadsByAgent.delete(agentId)) {
+          removedAnyThreadsByAgent = true;
+        }
         // Do NOT remove owned thread stores here — they are independent of
         // whether the agent appears in core.agents (published cores discover
         // agents asynchronously so agents may be empty on first fire). Stores
         // are torn down in teardownOwnedThreadStores() when the core detaches.
       }
+    }
+
+    if (removedAnyThreadsByAgent) {
+      this._threads = this.flattenSortedThreads();
+      // The previously-selected thread may have belonged to a now-removed
+      // agent. Revalidate so the details panel doesn't keep fetching against
+      // a thread that no list shows.
+      this.autoSelectLatestThread();
     }
 
     this.updateContextOptions(seenAgentIds);
@@ -749,10 +780,19 @@ export class WebInspectorElement extends LitElement {
       globalWindow.copilotkitCore,
     ];
 
-    const foundCore = globalCandidates.find(
-      (candidate): candidate is CopilotKitCore =>
-        !!candidate && typeof candidate === "object",
-    );
+    // Tighten the guard to require the methods/properties the inspector
+    // actually invokes. A bare !!candidate && typeof === "object" check would
+    // accept any non-null global (e.g. a debug helper happening to share the
+    // window key), which would then throw the moment the inspector tried to
+    // call .subscribe(...) or read .agents.
+    const isCopilotKitCoreLike = (
+      candidate: unknown,
+    ): candidate is CopilotKitCore =>
+      !!candidate &&
+      typeof candidate === "object" &&
+      typeof (candidate as { subscribe?: unknown }).subscribe === "function" &&
+      "agents" in (candidate as object);
+    const foundCore = globalCandidates.find(isCopilotKitCoreLike);
 
     if (foundCore) {
       this.core = foundCore;

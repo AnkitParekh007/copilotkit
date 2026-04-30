@@ -598,4 +598,151 @@ describe("WebInspectorElement", () => {
 
     expect(internals._ownedThreadStores.has("alpha")).toBe(true);
   });
+
+  it("backfills owned thread stores on non-connected status (e.g. connecting / error) once runtimeUrl is set (CR R4 #2)", async () => {
+    // Round 4 tightens the previous backfill: it must fire whenever the
+    // runtime URL is observable, not only when status reaches "connected".
+    // Prior to the fix, agents registered before runtimeUrl was set would
+    // never get their owned store if the runtime stayed in "connecting" or
+    // transitioned to "error".
+    const { agent } = createMockAgent("alpha");
+    const mockCore = createMockCore({ alpha: agent });
+    const inspector = createInspectorWithCore(mockCore.core);
+
+    mockCore.emitAgentsChanged();
+    await inspector.updateComplete;
+
+    const internals = getInternals(inspector);
+    expect(internals._ownedThreadStores.has("alpha")).toBe(false);
+
+    // Set the runtimeUrl and emit "connecting" — NOT connected. Backfill
+    // should still fire because the URL is now observable on core.
+    mockCore.core.runtimeUrl = "http://runtime.test";
+    mockCore.emitRuntimeConnectionStatusChanged(
+      CopilotKitCoreRuntimeConnectionStatus.Connecting,
+    );
+    await inspector.updateComplete;
+
+    expect(internals._ownedThreadStores.has("alpha")).toBe(true);
+  });
+
+  it("drops _threadsByAgent entries for removed agents (CR R4 #1)", async () => {
+    // When an agent is removed from core.agents, processAgentsChanged's
+    // cleanup loop must also drop the per-agent thread slice keyed by
+    // agentId. Otherwise stale threads linger in the flattened _threads
+    // list even though the agent is gone.
+    const { agent } = createMockAgent("alpha");
+    const mockCore = createMockCore(
+      { alpha: agent },
+      { runtimeUrl: "http://runtime.test" },
+    );
+    const inspector = createInspectorWithCore(mockCore.core);
+
+    mockCore.emitAgentsChanged();
+    await inspector.updateComplete;
+
+    const internals = getInternals(inspector);
+    // Plant a thread keyed under "alpha" so we have something the cleanup
+    // pass can drop. Don't depend on the owned-store subscription to
+    // populate it — the regression is specifically about the cleanup pass.
+    internals._threadsByAgent.set("alpha", [
+      { id: "thread-1", agentId: "alpha" },
+    ]);
+    internals._threads = [{ id: "thread-1", agentId: "alpha" }];
+    internals.selectedThreadId = "thread-1";
+
+    // Remove the agent from core. processAgentsChanged should:
+    //   - delete the per-agent slice from _threadsByAgent
+    //   - rebuild the flattened _threads list (now empty)
+    //   - revalidate selectedThreadId (autoSelectLatestThread clears it
+    //     because no threads remain)
+    mockCore.emitAgentsChanged({});
+    await inspector.updateComplete;
+
+    expect(internals._threadsByAgent.has("alpha")).toBe(false);
+    expect(internals._threads.some((t) => t.agentId === "alpha")).toBe(false);
+    expect(internals.selectedThreadId).toBeNull();
+  });
+
+  it("globally sorts _threads by updatedAt desc across agents (CR R4 #6)", async () => {
+    // Multi-agent users must see threads in chronological order, not
+    // grouped by Map insertion order. This pins the flattened list assigned
+    // at every site in subscribeToThreadStore.
+    const { agent: agentA } = createMockAgent("alpha");
+    const { agent: agentB } = createMockAgent("beta");
+    const mockCore = createMockCore(
+      { alpha: agentA, beta: agentB },
+      { runtimeUrl: "http://runtime.test" },
+    );
+    const inspector = createInspectorWithCore(mockCore.core);
+
+    mockCore.emitAgentsChanged();
+    await inspector.updateComplete;
+
+    const internals = getInternals(inspector);
+
+    // Replace the per-agent map with overlapping timestamps so insertion
+    // order does NOT match chronological order. With Map order:
+    //   alpha: [t-2024-01-03, t-2024-01-01]
+    //   beta:  [t-2024-01-04, t-2024-01-02]
+    // → insertion-flatten: [01-03, 01-01, 01-04, 01-02]
+    // → desc by updatedAt:  [01-04, 01-03, 01-02, 01-01]
+    type ThreadShape = (typeof internals._threadsByAgent extends Map<
+      string,
+      Array<infer T>
+    >
+      ? T
+      : never) & { updatedAt?: string };
+    internals._threadsByAgent.clear();
+    internals._threadsByAgent.set("alpha", [
+      { id: "a-2", agentId: "alpha", updatedAt: "2024-01-03" } as ThreadShape,
+      { id: "a-1", agentId: "alpha", updatedAt: "2024-01-01" } as ThreadShape,
+    ]);
+    internals._threadsByAgent.set("beta", [
+      { id: "b-2", agentId: "beta", updatedAt: "2024-01-04" } as ThreadShape,
+      { id: "b-1", agentId: "beta", updatedAt: "2024-01-02" } as ThreadShape,
+    ]);
+
+    // Trigger a recompute path: emit a fresh agents-changed so the inspector
+    // re-flattens. Simpler: call the private flattenSortedThreads directly
+    // via the same cast pattern used elsewhere in this file.
+    const inspectorWithFlatten = inspector as unknown as {
+      flattenSortedThreads: () => Array<{ id: string; updatedAt?: string }>;
+    };
+    const flattened = inspectorWithFlatten.flattenSortedThreads();
+
+    expect(flattened.map((t) => t.id)).toEqual(["b-2", "a-2", "b-1", "a-1"]);
+  });
+
+  it("does not auto-attach when window global is not Core-shaped (CR R4 #4)", () => {
+    // Tighten the auto-attach guard so it requires the methods/properties
+    // the inspector actually invokes (`subscribe`, `agents`). Before the
+    // fix, any non-null object on window.__COPILOTKIT_CORE__ would be
+    // accepted and the inspector would throw on first use.
+    const inspector = new WebInspectorElement();
+    document.body.appendChild(inspector);
+
+    const bogusGlobal = { someOtherField: 1 };
+    (
+      window as unknown as Record<string, unknown>
+    ).__COPILOTKIT_CORE__ = bogusGlobal;
+
+    // Force the auto-attach path. autoAttachCore and tryAutoAttachCore are
+    // private — cast to exercise them directly without depending on
+    // connectedCallback timing or attribute reflection.
+    const inspectorPrivate = inspector as unknown as {
+      autoAttachCore: boolean;
+      attemptedAutoAttach: boolean;
+      tryAutoAttachCore: () => void;
+      _core: unknown;
+    };
+    inspectorPrivate.autoAttachCore = true;
+    inspectorPrivate.attemptedAutoAttach = false;
+    inspectorPrivate.tryAutoAttachCore();
+
+    expect(inspectorPrivate._core).toBeFalsy();
+
+    // Cleanup.
+    delete (window as unknown as Record<string, unknown>).__COPILOTKIT_CORE__;
+  });
 });
