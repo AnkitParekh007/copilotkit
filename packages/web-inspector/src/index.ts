@@ -346,7 +346,15 @@ export class WebInspectorElement extends LitElement {
   }
 
   private subscribeToThreadStore(agentId: string, store: ɵThreadStore): void {
-    if (this._threadStoreSubscriptions.has(agentId)) return;
+    // If a previous subscription exists (e.g. unregister-then-register fired
+    // out of order or a sibling caller re-registered the same agentId with a
+    // new store), drop the stale handler before subscribing to the new store.
+    // Otherwise the early-return would silently bind us to the old store.
+    const existing = this._threadStoreSubscriptions.get(agentId);
+    if (existing) {
+      existing();
+      this._threadStoreSubscriptions.delete(agentId);
+    }
     const sub = store.select(ɵselectThreads).subscribe((threads) => {
       this._threadsByAgent.set(agentId, threads as ɵThread[]);
       this._threads = Array.from(this._threadsByAgent.values()).flat();
@@ -367,8 +375,23 @@ export class WebInspectorElement extends LitElement {
       this.selectedThreadId != null &&
       this._threads.some((t) => t.id === this.selectedThreadId);
     if (!stillValid) {
-      // Threads are sorted most-recently-updated first
-      this.selectedThreadId = this._threads[0]!.id;
+      // _threads is concatenated from per-agent lists in Map insertion order;
+      // each per-agent slice is most-recent-first, but the overall array is
+      // not globally sorted. Sort by updatedAt desc so we pick the latest
+      // thread across ALL agents, not the latest of whichever agent happened
+      // to be inserted first.
+      const sorted = [...this._threads].sort((a, b) => {
+        const ta = new Date(a.updatedAt).getTime();
+        const tb = new Date(b.updatedAt).getTime();
+        // NaN-safe: missing/invalid updatedAt sorts last.
+        const aValid = Number.isFinite(ta);
+        const bValid = Number.isFinite(tb);
+        if (!aValid && !bValid) return 0;
+        if (!aValid) return 1;
+        if (!bValid) return -1;
+        return tb - ta;
+      });
+      this.selectedThreadId = sorted[0]!.id;
     }
   }
 
@@ -382,11 +405,36 @@ export class WebInspectorElement extends LitElement {
   }
 
   private ensureOwnedThreadStore(agentId: string): void {
-    if (this._ownedThreadStores.has(agentId)) return;
-    // Don't overwrite a store already registered by useThreads() or another external caller
-    if (this.core?.getThreadStore(agentId)) return;
     const core = this.core;
     if (!core?.runtimeUrl) return;
+
+    const externalStore = core.getThreadStore(agentId);
+    const ownedStore = this._ownedThreadStores.get(agentId);
+
+    // Already correctly wired: we own this entry AND core agrees it's the
+    // current store. Idempotent re-call is a no-op.
+    if (ownedStore && externalStore === ownedStore) return;
+
+    if (externalStore) {
+      // Some other caller (e.g. useThreads()) is now the registered owner of
+      // this agentId. Drop any stale local reference to a previous owned
+      // store so we don't keep pointing at a torn-down instance, but don't
+      // overwrite the external registration.
+      if (ownedStore) {
+        this._ownedThreadStores.delete(agentId);
+      }
+      return;
+    }
+
+    // If we still hold a local entry but core has no record of it, the store
+    // is a stale orphan (e.g. agent was removed and re-added). Drop the local
+    // ref so the re-registration below isn't short-circuited.
+    if (ownedStore) {
+      this._ownedThreadStores.delete(agentId);
+      // Best-effort stop: the previous owner is no longer reachable, so we
+      // are responsible for releasing its subscriptions.
+      ownedStore.stop();
+    }
 
     const store = ɵcreateThreadStore({ fetch: globalThis.fetch });
     store.start();
@@ -400,7 +448,26 @@ export class WebInspectorElement extends LitElement {
     // has registered this store; registerThreadStore triggers onThreadStoreRegistered →
     // subscribeToThreadStore.
     this.subscribeToThreadStore(agentId, store);
-    core.registerThreadStore(agentId, store);
+    try {
+      core.registerThreadStore(agentId, store);
+    } catch (err) {
+      // Roll back local state so we don't leave the inspector with a store
+      // that core doesn't know about. The next ensureOwnedThreadStore call
+      // will retry cleanly.
+      this._ownedThreadStores.delete(agentId);
+      const unsub = this._threadStoreSubscriptions.get(agentId);
+      if (unsub) {
+        unsub();
+        this._threadStoreSubscriptions.delete(agentId);
+      }
+      this._threadsByAgent.delete(agentId);
+      store.stop();
+      swallowError(
+        err,
+        "WebInspectorElement.ensureOwnedThreadStore",
+        `Failed to register owned thread store for agent ${agentId}; threads view may be empty for this agent`,
+      );
+    }
   }
 
   private refreshOwnedThreadStore(agentId: string): void {
@@ -468,7 +535,18 @@ export class WebInspectorElement extends LitElement {
         this.subscribeToThreadStore(agentId, store);
         this.requestUpdate();
       },
-      onThreadStoreUnregistered: ({ agentId }) => {
+      // Receives `oldStore` from the @copilotkit/core ThreadStoreRegistry so
+      // we can stop and drop our owned-store reference when core unregisters
+      // it (e.g. when the agent is removed). Without dropping the stale entry
+      // here, ensureOwnedThreadStore would early-return on re-registration and
+      // the threads view would never repopulate.
+      onThreadStoreUnregistered: (event) => {
+        const { agentId } = event;
+        // The new core contract passes oldStore as a second field on event;
+        // the locally installed @copilotkit/core types don't yet describe it.
+        // The cast is a temporary bridge until the cherry-pick lands and the
+        // CopilotKitCoreSubscriber type is regenerated against the new shape.
+        const oldStore = (event as { oldStore?: ɵThreadStore }).oldStore;
         const unsub = this._threadStoreSubscriptions.get(agentId);
         if (unsub) {
           unsub();
@@ -476,6 +554,22 @@ export class WebInspectorElement extends LitElement {
         }
         this._threadsByAgent.delete(agentId);
         this._threads = Array.from(this._threadsByAgent.values()).flat();
+        // Only stop+delete if the entry we own matches the store core just
+        // unregistered. A different store (e.g. one a consumer registered via
+        // useThreads()) is none of our business to stop.
+        const owned = this._ownedThreadStores.get(agentId);
+        if (oldStore && owned === oldStore) {
+          oldStore.stop();
+          this._ownedThreadStores.delete(agentId);
+        } else if (!oldStore && owned) {
+          // Defensive fallback for the in-flight gap where the core may still
+          // be on the old single-arg contract: if we have an owned store and
+          // core no longer knows about it, treat as ours-to-clean.
+          if (this.core?.getThreadStore(agentId) === undefined) {
+            owned.stop();
+            this._ownedThreadStores.delete(agentId);
+          }
+        }
         this.requestUpdate();
       },
       onAgentRunStarted: ({ agent }) => {
@@ -1112,7 +1206,10 @@ ${argsString}</pre
       try {
         return JSON.stringify(args, null, 2);
       } catch {
-        return String(args);
+        // JSON.stringify throws on circular references. Render a literal
+        // sentinel rather than letting `String(args)` produce "[object Object]",
+        // which gives the reader no signal that the value couldn't be displayed.
+        return "<unserializable>";
       }
     }
 
@@ -1162,7 +1259,10 @@ ${argsString}</pre
       try {
         return JSON.stringify(state, null, 2);
       } catch {
-        return String(state);
+        // Circular reference or non-serializable value: render a sentinel so
+        // the reader knows the value couldn't be displayed (vs. a confusing
+        // "[object Object]" from String(state)).
+        return "<unserializable>";
       }
     }
 
@@ -1250,6 +1350,14 @@ ${argsString}</pre
         "WebInspectorElement.copyToClipboard",
         "Failed to copy to clipboard",
       );
+      // Surface a transient UI signal so the user knows the click didn't
+      // silently no-op. ~1500ms is enough to read "✗ failed" without lingering.
+      this.copyFailedEvents.add(eventId);
+      this.requestUpdate();
+      setTimeout(() => {
+        this.copyFailedEvents.delete(eventId);
+        this.requestUpdate();
+      }, 1500);
     }
   }
 
@@ -3242,6 +3350,10 @@ ${argsString}</pre
   private selectedContext = "all-agents";
   private expandedRows: Set<string> = new Set();
   private copiedEvents: Set<string> = new Set();
+  // Tracks events whose copy attempt failed, so the UI can surface a transient
+  // "✗ failed" indicator instead of leaving the user wondering why nothing
+  // happened. Cleared on a short timer.
+  private copyFailedEvents: Set<string> = new Set();
   private expandedTools: Set<string> = new Set();
   private expandedContextItems: Set<string> = new Set();
   private copiedContextItems: Set<string> = new Set();
@@ -3670,7 +3782,9 @@ ${prettyEvent}</pre
                                 class="absolute right-0 top-0 cursor-pointer rounded px-2 py-1 text-[10px] opacity-0 transition group-hover:opacity-100 ${
                                   this.copiedEvents.has(event.id)
                                     ? "bg-green-100 text-green-700"
-                                    : "bg-gray-100 text-gray-600 hover:bg-gray-200 hover:text-gray-900"
+                                    : this.copyFailedEvents.has(event.id)
+                                      ? "bg-rose-100 text-rose-700 opacity-100"
+                                      : "bg-gray-100 text-gray-600 hover:bg-gray-200 hover:text-gray-900"
                                 }"
                                 @click=${(e: Event) => {
                                   e.stopPropagation();
@@ -3682,9 +3796,13 @@ ${prettyEvent}</pre
                                     ? html`
                                         <span>✓ Copied</span>
                                       `
-                                    : html`
-                                        <span>Copy</span>
-                                      `
+                                    : this.copyFailedEvents.has(event.id)
+                                      ? html`
+                                          <span>✗ Failed</span>
+                                        `
+                                      : html`
+                                          <span>Copy</span>
+                                        `
                                 }
                               </button>
                             </div>
@@ -3761,6 +3879,7 @@ ${prettyEvent}</pre
 
     this.expandedRows.clear();
     this.copiedEvents.clear();
+    this.copyFailedEvents.clear();
     this.requestUpdate();
   };
 

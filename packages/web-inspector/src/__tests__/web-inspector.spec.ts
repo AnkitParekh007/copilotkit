@@ -16,6 +16,8 @@ type InspectorInternals = {
   agentMessages: Map<string, Array<{ contentText?: string }>>;
   agentStates: Map<string, unknown>;
   cachedTools: Array<{ name: string }>;
+  _ownedThreadStores: Map<string, unknown>;
+  _threadStoreSubscriptions: Map<string, () => void>;
 };
 
 type InspectorContextInternals = {
@@ -91,29 +93,78 @@ type MockCore = {
   context: Record<string, unknown>;
   properties: Record<string, unknown>;
   runtimeConnectionStatus: CopilotKitCoreRuntimeConnectionStatus;
+  runtimeUrl?: string;
   subscribe: (subscriber: CopilotKitCoreSubscriber) => {
     unsubscribe: () => void;
   };
-  getThreadStores: () => Record<string, never>;
-  getThreadStore: (agentId: string) => undefined;
+  getThreadStores: () => Record<string, unknown>;
+  getThreadStore: (agentId: string) => unknown;
+  registerThreadStore: (agentId: string, store: unknown) => void;
+  unregisterThreadStore: (agentId: string) => void;
 };
 
-function createMockCore(initialAgents: Record<string, AbstractAgent> = {}) {
+function createMockCore(
+  initialAgents: Record<string, AbstractAgent> = {},
+  options: { runtimeUrl?: string } = {},
+) {
   const subscribers = new Set<CopilotKitCoreSubscriber>();
+  const stores = new Map<string, unknown>();
   const core: MockCore = {
     agents: initialAgents,
     context: {},
     properties: {},
     runtimeConnectionStatus: CopilotKitCoreRuntimeConnectionStatus.Connected,
+    runtimeUrl: options.runtimeUrl,
     subscribe(subscriber: CopilotKitCoreSubscriber) {
       subscribers.add(subscriber);
       return { unsubscribe: () => subscribers.delete(subscriber) };
     },
     getThreadStores() {
-      return {};
+      return Object.fromEntries(stores);
     },
-    getThreadStore(_agentId: string) {
-      return undefined;
+    getThreadStore(agentId: string) {
+      return stores.get(agentId);
+    },
+    registerThreadStore(agentId: string, store: unknown) {
+      const previous = stores.get(agentId);
+      stores.set(agentId, store);
+      // Fire the registration event so subscribers (e.g. the inspector)
+      // hook up their per-store subscriptions, mirroring the real registry.
+      subscribers.forEach((subscriber) =>
+        subscriber.onThreadStoreRegistered?.({
+          copilotkit: core as unknown as CopilotKitCore,
+          agentId,
+          // ɵThreadStore is an internal alias the inspector consumes via the
+          // real type; the test mock only models the subset used by Lit's
+          // reactive subscription path.
+          store: store as never,
+        }),
+      );
+      // If a previous store existed, the registry would also have unregistered
+      // it. Fire that event with oldStore so the new contract is exercised.
+      if (previous && previous !== store) {
+        subscribers.forEach((subscriber) =>
+          subscriber.onThreadStoreUnregistered?.({
+            copilotkit: core as unknown as CopilotKitCore,
+            agentId,
+            // The new core contract carries oldStore; the local types may
+            // not yet describe it, so pass it through a cast.
+            ...({ oldStore: previous } as Record<string, unknown>),
+          } as Parameters<NonNullable<CopilotKitCoreSubscriber["onThreadStoreUnregistered"]>>[0]),
+        );
+      }
+    },
+    unregisterThreadStore(agentId: string) {
+      const previous = stores.get(agentId);
+      if (!previous) return;
+      stores.delete(agentId);
+      subscribers.forEach((subscriber) =>
+        subscriber.onThreadStoreUnregistered?.({
+          copilotkit: core as unknown as CopilotKitCore,
+          agentId,
+          ...({ oldStore: previous } as Record<string, unknown>),
+        } as Parameters<NonNullable<CopilotKitCoreSubscriber["onThreadStoreUnregistered"]>>[0]),
+      );
     },
   };
 
@@ -141,6 +192,8 @@ function createMockCore(initialAgents: Record<string, AbstractAgent> = {}) {
         }),
       );
     },
+    /** Snapshot of currently-registered stores in the registry. */
+    stores,
   };
 }
 
@@ -259,6 +312,62 @@ describe("WebInspectorElement", () => {
 
     contextInternals.persistState();
     expect(localStorage.getItem("cpk:inspector:state")).toBeTruthy();
+  });
+
+  it("re-registers an owned thread store after agent removal + re-add (no stale-orphan leak)", async () => {
+    // Reproduces the bug fixed in CPK-7193 review round 1:
+    //
+    //   register store → remove agent → core auto-unregisters →
+    //   add the same agent back → ensureOwnedThreadStore must NOT early-return
+    //   on the stale local entry, otherwise the threads view never repopulates.
+    //
+    // The inspector's onThreadStoreUnregistered handler is responsible for
+    // dropping the local owned-store entry when core fires the unregister
+    // event with `oldStore`. After that, ensureOwnedThreadStore can register
+    // a fresh store and the new instance ends up in _ownedThreadStores.
+    const { agent: agentA } = createMockAgent("alpha");
+    const mockCore = createMockCore(
+      { alpha: agentA },
+      { runtimeUrl: "http://runtime.test" },
+    );
+    const inspector = createInspectorWithCore(mockCore.core);
+
+    mockCore.emitAgentsChanged();
+    await inspector.updateComplete;
+
+    const internals = getInternals(inspector);
+    const initialStore = internals._ownedThreadStores.get("alpha");
+    expect(initialStore).toBeDefined();
+    // Core registry should also know about it (registerThreadStore was called
+    // by ensureOwnedThreadStore).
+    expect(mockCore.stores.get("alpha")).toBe(initialStore);
+
+    // Remove the agent. processAgentsChanged sees alpha is gone, but per the
+    // file's invariant it does NOT teardown owned stores there. Simulate the
+    // core also unregistering the store (which fires onThreadStoreUnregistered
+    // with oldStore).
+    mockCore.emitAgentsChanged({});
+    mockCore.core.unregisterThreadStore("alpha");
+    await inspector.updateComplete;
+
+    // After unregister with oldStore, the local owned-stores Map must no
+    // longer reference the stale store — otherwise re-registration below
+    // short-circuits on the early-return.
+    expect(internals._ownedThreadStores.has("alpha")).toBe(false);
+
+    // Re-add the agent. ensureOwnedThreadStore should NOT early-return: it
+    // should create a fresh store and register it with core.
+    const { agent: agentA2 } = createMockAgent("alpha");
+    mockCore.emitAgentsChanged({ alpha: agentA2 });
+    await inspector.updateComplete;
+
+    const refreshedStore = internals._ownedThreadStores.get("alpha");
+    expect(refreshedStore).toBeDefined();
+    // The new store must NOT be the same instance as the original — otherwise
+    // we're still pointing at a torn-down store from the previous lifecycle.
+    expect(refreshedStore).not.toBe(initialStore);
+    // Core registry should also have the new instance.
+    expect(mockCore.stores.get("alpha")).toBe(refreshedStore);
   });
 
   it("syncs agent state on direct setState (onStateChanged without pipeline events)", async () => {
