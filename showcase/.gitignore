@@ -19,3 +19,7 @@ shell/src/data/*.json
 shell-dojo/src/data/*.json
 shell-docs/src/data/*.json
 shell-dashboard/src/data/*.json
+
+# Eval results (local, not committed)
+.eval-results/
+.eval-baseline.json
