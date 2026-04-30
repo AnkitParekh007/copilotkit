@@ -47,7 +47,10 @@ export function useFrontendTool<T extends Record<string, unknown>>(
       }
       core.addTool(tool);
 
-      if (tool.render && tool.parameters) {
+      // The render function is registered even when tool.parameters is
+      // undefined — tools like HITL confirm dialogs have no parameters
+      // but still need their UI rendered in the chat.
+      if (tool.render) {
         core.addHookRenderToolCall({
           name,
           args: tool.parameters,

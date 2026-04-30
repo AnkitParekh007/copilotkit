@@ -137,12 +137,14 @@ export function useInterrupt<TValue = unknown, TResult = never>(
     const resolvedAgent = agent.value;
     if (!resolvedAgent) return;
 
+    const interruptEventValue = interrupt.value?.value;
     interrupt.value = null;
     void copilotkit.value.runAgent({
       agent: resolvedAgent,
       forwardedProps: {
         command: {
           resume: response,
+          interruptEvent: interruptEventValue,
         },
       },
     });
