@@ -1,8 +1,8 @@
-import {
+import type {
   CopilotIntelligenceRuntimeLike,
   CopilotRuntimeLike,
-  isIntelligenceRuntime,
 } from "../../core/runtime";
+import { isIntelligenceRuntime } from "../../core/runtime";
 import { logger } from "@copilotkit/shared";
 import { errorResponse, isHandlerResponse } from "../shared/json-response";
 import { isValidIdentifier } from "../shared/intelligence-utils";
@@ -105,14 +105,21 @@ export async function handleListThreads({
     }
   }
 
-  // Local in-memory fallback — useful for local development without Intelligence
+  // Local in-memory fallback — useful for local development without Intelligence.
+  //
+  // Mirrors the Intelligence-platform contract above: `agentId` is required.
+  // Returning a 400 keeps the two backends interchangeable for clients (the
+  // inspector, smoke tests, etc.) so a request that succeeds against one
+  // succeeds against the other, and the failure modes match.
   if (runtime.runner instanceof InMemoryAgentRunner) {
     const url = new URL(request.url);
     const agentId = url.searchParams.get("agentId");
-    let threads = runtime.runner.listThreads();
-    if (agentId) {
-      threads = threads.filter((t) => t.agentId === agentId);
+    if (!isValidIdentifier(agentId)) {
+      return errorResponse("Valid agentId query param is required", 400);
     }
+    const threads = runtime.runner
+      .listThreads()
+      .filter((t) => t.agentId === agentId);
     return Response.json({ threads, nextCursor: null });
   }
 
