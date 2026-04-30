@@ -27,6 +27,7 @@ export {
 export {
   useAgent,
   useFrontendTool,
+  useComponent,
   useHumanInTheLoop,
   useInterrupt,
   useSuggestions,

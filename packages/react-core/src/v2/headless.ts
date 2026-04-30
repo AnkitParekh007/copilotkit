@@ -24,6 +24,7 @@ export {
 // Platform-agnostic hooks
 export { useAgent, type UseAgentUpdate } from "./hooks/use-agent";
 export { useFrontendTool } from "./hooks/use-frontend-tool";
+export { useComponent } from "./hooks/use-component";
 export { useHumanInTheLoop } from "./hooks/use-human-in-the-loop";
 export { useInterrupt, type UseInterruptConfig } from "./hooks/use-interrupt";
 export { useSuggestions } from "./hooks/use-suggestions";
