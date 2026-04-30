@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Plus_Jakarta_Sans, Spline_Sans_Mono } from "next/font/google";
+import Script from "next/script";
 import { BrandNav } from "@/components/brand-nav";
 import { FrameworkProvider } from "@/components/framework-provider";
 import { getIntegrations } from "@/lib/registry";
@@ -82,6 +83,15 @@ export default function RootLayout({
       lang="en"
       className={`${plusJakartaSans.variable} ${splineSansMono.variable}`}
     >
+      <head>
+        <Script
+          id="hubspot-script"
+          type="text/javascript"
+          src="https://js.hs-scripts.com/45532593.js"
+          async
+          defer
+        />
+      </head>
       <body className="min-h-screen">
         <FrameworkProvider knownFrameworks={knownFrameworks}>
           <BrandNav />
