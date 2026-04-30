@@ -26,7 +26,7 @@ on:
 
 concurrency:
   group: showcase-eval-${{ github.event.issue.number }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -93,7 +93,7 @@ jobs:
 
           if [ -z "$ARGS" ]; then
             # Bare /eval — d5 affected
-            SCOPE_FLAG="--affected"
+            SCOPE_FLAG="--scope affected"
             SCOPE_DISPLAY="affected integrations"
           else
             # First token is the level (only d5 supported for now)
@@ -111,11 +111,11 @@ jobs:
 
             if [ -z "$REST" ]; then
               # /eval d5 — affected
-              SCOPE_FLAG="--affected"
+              SCOPE_FLAG="--scope affected"
               SCOPE_DISPLAY="affected integrations"
             elif [ "$REST" = "all" ]; then
               # /eval d5 all
-              SCOPE_FLAG="--all"
+              SCOPE_FLAG="--scope all"
               SCOPE_DISPLAY="all integrations"
             else
               # /eval d5 mastra,agno → specific slugs
@@ -130,7 +130,7 @@ jobs:
                     ;;
                 esac
               done
-              SCOPE_FLAG="--slugs $REST"
+              SCOPE_FLAG="--slug $REST"
               SCOPE_DISPLAY="$REST"
             fi
           fi
@@ -237,7 +237,7 @@ jobs:
         run: |
           set -o pipefail
 
-          # Build the command. EVAL_SCOPE_FLAG may contain spaces (e.g. "--slugs mastra,agno")
+          # Build the command. EVAL_SCOPE_FLAG may contain spaces (e.g. "--slug mastra,agno")
           # so we intentionally leave it unquoted for word splitting.
           # shellcheck disable=SC2086
           CMD="showcase/bin/showcase eval --${EVAL_LEVEL} ${EVAL_SCOPE_FLAG} --parallel 8 --json --baseline compare --timeout 60000"
@@ -368,30 +368,38 @@ jobs:
               }
 
               // Build results table from the JSON.
-              // Expected shape: { summary: { total, passed, failed, skipped }, results: [...] }
+              // Expected shape: { summary: { total, pass, fail, skip, duration_ms },
+              //   results: { slug: { testName: { status, duration_ms, error? } } } }
               const summary = results.summary || {};
-              const items = results.results || [];
-              const total = summary.total || items.length || 0;
-              const passed = summary.passed || 0;
-              const failed = summary.failed || 0;
-              const skipped = summary.skipped || 0;
+              const resultsMap = results.results || {};
+              const total = summary.total || 0;
+              const passed = summary.pass || 0;
+              const failed = summary.fail || 0;
+              const skipped = summary.skip || 0;
 
               const verdict = failed === 0
                 ? ':white_check_mark: **SAFE TO MERGE**'
                 : `:x: **FAILURES DETECTED** (${failed}/${total} failed)`;
 
-              // Build per-integration results table
+              // Build per-integration results table from nested object
               let tableRows = '';
-              if (items.length > 0) {
-                tableRows = items.map(r => {
-                  const icon = r.status === 'passed' ? ':white_check_mark:'
-                    : r.status === 'failed' ? ':x:'
-                    : r.status === 'skipped' ? ':fast_forward:'
+              const rows = [];
+              for (const [slug, tests] of Object.entries(resultsMap)) {
+                for (const [testName, r] of Object.entries(tests)) {
+                  const icon = r.status === 'pass' ? ':white_check_mark:'
+                    : r.status === 'fail' ? ':x:'
+                    : r.status === 'skip' ? ':fast_forward:'
+                    : r.status === 'error' ? ':boom:'
+                    : r.status === 'build_failed' ? ':hammer:'
+                    : r.status === 'unhealthy' ? ':warning:'
                     : ':question:';
-                  const duration = r.duration ? `${(r.duration / 1000).toFixed(1)}s` : '-';
-                  const detail = r.error ? r.error.substring(0, 120) : (r.message || '-');
-                  return `| ${icon} | \`${r.slug || r.name || 'unknown'}\` | ${r.status || 'unknown'} | ${duration} | ${detail} |`;
-                }).join('\n');
+                  const duration = r.duration_ms ? `${(r.duration_ms / 1000).toFixed(1)}s` : '-';
+                  const detail = r.error ? r.error.substring(0, 120) : '-';
+                  rows.push(`| ${icon} | \`${slug}\` | ${testName} | ${r.status || 'unknown'} | ${duration} | ${detail} |`);
+                }
+              }
+              if (rows.length > 0) {
+                tableRows = rows.join('\n');
               }
 
               body = [
@@ -415,8 +423,8 @@ jobs:
                 body += [
                   `#### Per-Integration Results`,
                   ``,
-                  `| | Integration | Status | Duration | Details |`,
-                  `|---|---|---|---|---|`,
+                  `| | Integration | Test | Status | Duration | Details |`,
+                  `|---|---|---|---|---|---|`,
                   tableRows,
                   ``,
                 ].join('\n');
