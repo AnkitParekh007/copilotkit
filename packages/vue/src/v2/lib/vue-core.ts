@@ -55,8 +55,8 @@ export class CopilotKitCoreVue extends CopilotKitCore {
   }
 
   get renderActivityMessages(): Readonly<
-    VueActivityMessageRenderer<unknown>
-  >[] {
+    VueActivityMessageRenderer<unknown>[]
+  > {
     return this._renderActivityMessages;
   }
 
