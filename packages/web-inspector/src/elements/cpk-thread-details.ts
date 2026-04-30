@@ -658,6 +658,13 @@ class CpkThreadDetails extends LitElement {
       this._messagesError = null;
       this._eventsNotAvailable = false;
       this._stateNotAvailable = false;
+      // Reset the per-tab loading flags. Aborted fetches' finally-blocks skip
+      // clearing these (they only run for the currently-active controller),
+      // so without this reset a threadId → null transition would leave the
+      // renderer stuck on "Loading…" forever.
+      this._loadingMessages = false;
+      this._loadingEvents = false;
+      this._loadingState = false;
       // Cancel any in-flight per-tab fetches for the previous thread. Each tab
       // has its own controller so an aborted /messages call doesn't also
       // cancel an unrelated /events or /state call.

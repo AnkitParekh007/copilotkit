@@ -528,6 +528,13 @@ class CpkThreadGate extends LitElement {
         "cpk_threads_access=1; path=/; max-age=31536000; SameSite=Lax";
       this._threadsGateError = null;
       this._threadsGateCodeInvalid = false;
+      // Cancel any pending invalid-flash timer so it can't fire after we've
+      // unlocked (typing the wrong code then immediately the right one would
+      // otherwise leave a queued requestUpdate landing on the unlocked gate).
+      if (this._threadsGateInvalidTimer !== null) {
+        clearTimeout(this._threadsGateInvalidTimer);
+        this._threadsGateInvalidTimer = null;
+      }
       this._threadsUnlocking = true;
       if (this._threadsUnlockingTimer !== null) {
         clearTimeout(this._threadsUnlockingTimer);

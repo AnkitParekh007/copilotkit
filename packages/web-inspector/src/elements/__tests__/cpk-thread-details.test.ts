@@ -22,6 +22,9 @@ type DetailsInternals = {
   _messagesAbort: AbortController | null;
   _eventsAbort: AbortController | null;
   _stateAbort: AbortController | null;
+  _loadingMessages: boolean;
+  _loadingEvents: boolean;
+  _loadingState: boolean;
   // Private methods we drive directly. updated() is Lit's protected lifecycle
   // hook; calling it manually is the equivalent of "the prop changed and Lit
   // committed".
@@ -273,6 +276,35 @@ describe("cpk-thread-details", () => {
 
     expect(el._stateNotAvailable).toBe(false);
     expect(el._fetchedState).toEqual({ count: 7 });
+  });
+
+  it("clears all per-tab loading flags when threadId transitions to null", async () => {
+    // Regression: aborted fetches' finally blocks only clear the loading flag
+    // when the controller is the currently-active one. On threadId → null,
+    // _abortAllFetches() aborts the in-flight controllers and the `if
+    // (this.threadId)` guard skips the new fetches, so without an explicit
+    // reset in updated() the three loading flags would stay true forever and
+    // the renderer would be stuck on "Loading…".
+    const el = makeEl();
+    el.runtimeUrl = "http://runtime.test";
+
+    el.threadId = "t1";
+    el.updated(new Map([["threadId", null]]));
+    // Three fetches start; the in-flight loading flags are now true.
+    expect(mock.calls).toHaveLength(3);
+    expect(el._loadingMessages).toBe(true);
+    expect(el._loadingEvents).toBe(true);
+    expect(el._loadingState).toBe(true);
+
+    // Transition threadId → null while fetches are still pending.
+    el.threadId = null;
+    el.updated(new Map([["threadId", "t1"]]));
+    // Drain microtasks so any aborted fetch's finally blocks run.
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(el._loadingMessages).toBe(false);
+    expect(el._loadingEvents).toBe(false);
+    expect(el._loadingState).toBe(false);
   });
 
   it("a 200 /messages response with a user message is mapped into the conversation", async () => {
