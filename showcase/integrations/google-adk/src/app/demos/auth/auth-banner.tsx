@@ -1,51 +1,54 @@
 "use client";
 
-import React from "react";
+interface AuthBannerProps {
+  authenticated: boolean;
+  onAuthenticate: () => void;
+  onSignOut: () => void;
+}
 
+/**
+ * Sticky banner above <CopilotChat /> that reflects and toggles demo auth
+ * state. Pure presentational — owns no state itself. Testids are stable
+ * contract for QA + Playwright specs.
+ */
 export function AuthBanner({
   authenticated,
-  onSignIn,
+  onAuthenticate,
   onSignOut,
-}: {
-  authenticated: boolean;
-  onSignIn: () => void;
-  onSignOut: () => void;
-}) {
+}: AuthBannerProps) {
+  const wrapperClass = authenticated
+    ? "border-emerald-300 bg-emerald-50 text-emerald-900"
+    : "border-amber-300 bg-amber-50 text-amber-900";
+  const statusText = authenticated
+    ? "✓ Signed in as demo user"
+    : "⚠ Signed out — the agent will reject your messages until you sign in.";
+
   return (
     <div
       data-testid="auth-banner"
-      className={`flex items-center justify-between px-4 py-3 border-b ${
-        authenticated
-          ? "bg-emerald-50 border-emerald-200 text-emerald-800"
-          : "bg-amber-50 border-amber-200 text-amber-800"
-      }`}
+      data-authenticated={authenticated ? "true" : "false"}
+      className={`sticky top-0 z-10 flex items-center justify-between gap-3 rounded-md border px-4 py-3 text-sm ${wrapperClass}`}
     >
-      <div className="flex items-center gap-2 text-sm">
-        <span
-          className={`w-1.5 h-1.5 rounded-full ${
-            authenticated ? "bg-emerald-500" : "bg-amber-500"
-          }`}
-        />
-        {authenticated
-          ? "Signed in — bearer token attached to every request."
-          : "Signed out — runtime returns 401 until you sign in."}
-      </div>
+      <span data-testid="auth-status" className="font-medium">
+        {statusText}
+      </span>
       {authenticated ? (
         <button
           type="button"
+          data-testid="auth-sign-out-button"
           onClick={onSignOut}
-          className="rounded-lg border border-emerald-300 bg-white px-3 py-1.5 text-xs font-medium hover:bg-emerald-100"
+          className="rounded border border-emerald-400 bg-white px-3 py-1 text-xs font-medium text-emerald-800 hover:bg-emerald-100"
         >
           Sign out
         </button>
       ) : (
         <button
-          data-testid="auth-sign-in"
           type="button"
-          onClick={onSignIn}
-          className="rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-700"
+          data-testid="auth-authenticate-button"
+          onClick={onAuthenticate}
+          className="rounded border border-amber-400 bg-white px-3 py-1 text-xs font-medium text-amber-800 hover:bg-amber-100"
         >
-          Sign in (demo)
+          Sign in
         </button>
       )}
     </div>
