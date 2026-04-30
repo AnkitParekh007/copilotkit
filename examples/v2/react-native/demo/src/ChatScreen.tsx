@@ -11,12 +11,14 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useAgent, useCopilotKit, useFrontendTool } from "@copilotkit/react-native";
-import { z } from "zod";
 import {
-  MeetingTimePicker,
-  type MeetingTimePickerStatus,
-} from "./MeetingTimePicker";
+  useAgent,
+  useCopilotKit,
+  useFrontendTool,
+} from "@copilotkit/react-native";
+import { z } from "zod";
+import { MeetingTimePicker } from "./MeetingTimePicker";
+import type { MeetingTimePickerStatus } from "./MeetingTimePicker";
 
 interface HitlState {
   status: MeetingTimePickerStatus;
@@ -25,13 +27,21 @@ interface HitlState {
   selectedSlot?: { date: string; time: string; duration: string } | null;
 }
 
+function generateThreadId() {
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    return (c === "x" ? r : (r & 0x3) | 0x8).toString(16);
+  });
+}
+
 export function ChatScreen() {
   const insets = useSafeAreaInsets();
   const [inputText, setInputText] = useState("");
+  const [threadId, setThreadId] = useState(generateThreadId);
   const flatListRef = useRef<FlatList>(null);
 
   const { copilotkit } = useCopilotKit();
-  const { agent } = useAgent({ agentId: "default" });
+  const { agent } = useAgent({ agentId: "default", threadId });
 
   const messages = agent?.messages ?? [];
   const isLoading = agent?.isRunning ?? false;
@@ -83,11 +93,17 @@ export function ChatScreen() {
     setHitl((prev) => (prev ? { ...prev, status: "declined" } : null));
   }, []);
 
+  const handleNewThread = useCallback(() => {
+    setThreadId(generateThreadId());
+    setHitl(null);
+    respondRef.current = null;
+    setInputText("");
+  }, []);
+
   // ── Messages + HITL card as FlatList items ─────────────────────────────
   const listItems = React.useMemo(() => {
     const filtered = messages.filter(
-      (m: any) =>
-        m.role === "user" || (m.role === "assistant" && m.content),
+      (m: any) => m.role === "user" || (m.role === "assistant" && m.content),
     );
     if (hitl) {
       return [...filtered, { id: "__hitl__", role: "hitl" }];
@@ -175,8 +191,22 @@ export function ChatScreen() {
       keyboardVerticalOffset={0}
     >
       <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
-        <Text style={styles.headerTitle}>CopilotKit Chat</Text>
-        <Text style={styles.headerSubtitle}>React Native · Human in the Loop</Text>
+        <View style={styles.headerRow}>
+          <View>
+            <Text style={styles.headerTitle}>CopilotKit Chat</Text>
+            <Text style={styles.headerSubtitle}>
+              React Native · Human in the Loop
+            </Text>
+          </View>
+          {messages.length > 0 && (
+            <TouchableOpacity
+              style={styles.newChatButton}
+              onPress={handleNewThread}
+            >
+              <Text style={styles.newChatButtonText}>+ New Chat</Text>
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
 
       <FlatList
@@ -201,9 +231,7 @@ export function ChatScreen() {
                 )
               }
             >
-              <Text style={styles.suggestionText}>
-                Schedule Meeting (HITL)
-              </Text>
+              <Text style={styles.suggestionText}>Schedule Meeting (HITL)</Text>
             </Pressable>
           </View>
         }
@@ -245,11 +273,27 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingBottom: 12,
   },
+  headerRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
   headerTitle: { color: "#fff", fontSize: 20, fontWeight: "700" },
   headerSubtitle: {
     color: "rgba(255,255,255,0.7)",
     fontSize: 13,
     marginTop: 2,
+  },
+  newChatButton: {
+    backgroundColor: "rgba(255,255,255,0.2)",
+    borderRadius: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  newChatButtonText: {
+    color: "#fff",
+    fontSize: 13,
+    fontWeight: "600",
   },
   messageList: { padding: 16, flexGrow: 1 },
   messageBubble: {
