@@ -46,6 +46,7 @@ import {
 } from "./lib/persistence";
 import type { PersistedState } from "./lib/persistence";
 import { ThreadDividerController } from "./lib/resize-controller";
+import { swallowError } from "./lib/swallow";
 import "./elements/cpk-thread-list";
 import "./elements/cpk-thread-details";
 import "./elements/cpk-thread-gate";
@@ -1238,7 +1239,16 @@ ${argsString}</pre
         this.requestUpdate();
       }, 2000);
     } catch (err) {
+      // Keep the existing console.error for backward-compat (developers
+      // already grep for this string), and route through swallowError so the
+      // failure shows up consistently with the rest of the inspector's
+      // graceful-degradation breadcrumbs.
       console.error("Failed to copy to clipboard:", err);
+      swallowError(
+        err,
+        "WebInspectorElement.copyToClipboard",
+        "Failed to copy to clipboard",
+      );
     }
   }
 
@@ -5058,7 +5068,12 @@ ${prettyEvent}</pre
       this.announcementLoaded = true;
 
       this.requestUpdate();
-    } catch {
+    } catch (err) {
+      swallowError(
+        err,
+        "WebInspectorElement.fetchAnnouncement",
+        "Failed to load announcement; continuing without it",
+      );
       this.announcementLoaded = true;
       this.requestUpdate();
     }
@@ -5088,7 +5103,12 @@ ${prettyEvent}</pre
         url.searchParams.append("ref", "cpk-inspector");
       }
       return url.toString();
-    } catch {
+    } catch (err) {
+      swallowError(
+        err,
+        "WebInspectorElement.appendRefParam",
+        "Could not parse href for ref param; returning original href",
+      );
       return href;
     }
   }
@@ -5117,8 +5137,12 @@ ${prettyEvent}</pre
       }
       // Backward compatibility: previous shape { hash }
       return null;
-    } catch {
-      // ignore malformed storage
+    } catch (err) {
+      swallowError(
+        err,
+        "WebInspectorElement.loadStoredAnnouncementTimestamp",
+        "Malformed announcement timestamp in localStorage; ignoring",
+      );
     }
     return null;
   }
@@ -5130,8 +5154,12 @@ ${prettyEvent}</pre
     try {
       const payload = JSON.stringify({ timestamp });
       window.localStorage.setItem(ANNOUNCEMENT_STORAGE_KEY, payload);
-    } catch {
-      // Non-fatal if storage is unavailable
+    } catch (err) {
+      swallowError(
+        err,
+        "WebInspectorElement.persistAnnouncementTimestamp",
+        "Could not persist announcement timestamp; storage unavailable",
+      );
     }
   }
 

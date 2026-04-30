@@ -6,6 +6,7 @@ import {
   formatTimestamp,
   highlightedJson,
 } from "../lib/highlight";
+import { swallowError } from "../lib/swallow";
 import type {
   ApiAgentEvent,
   ApiThreadMessage,
@@ -754,6 +755,14 @@ class CpkThreadDetails extends LitElement {
         err instanceof Error
           ? err.message
           : `Failed to load ${tab === "messages" ? "messages" : tab === "events" ? "events" : "state"}`;
+      // Surface a breadcrumb in addition to the user-visible error message so
+      // failures (network issues, 5xx, malformed JSON) leave a console trail
+      // even when the user doesn't notice the error pane.
+      swallowError(
+        err,
+        `CpkThreadDetails._fetchTab.${tab}`,
+        `Failed to load /${tab} for thread ${threadId}`,
+      );
       if (tab === "messages") {
         this._messagesError = message;
         this._conversation = fallback as unknown as ConversationItem[];
@@ -828,8 +837,12 @@ class CpkThreadDetails extends LitElement {
             let args: Record<string, unknown> = {};
             try {
               args = JSON.parse(tc.args) as Record<string, unknown>;
-            } catch {
-              /* leave empty */
+            } catch (err) {
+              swallowError(
+                err,
+                "CpkThreadDetails.mapMessages.toolCallArgs",
+                "Could not parse tool-call arguments JSON; rendering empty object",
+              );
             }
             const item: ConversationToolCall = {
               id: tc.id,
@@ -867,7 +880,12 @@ class CpkThreadDetails extends LitElement {
               string,
               unknown
             >;
-          } catch {
+          } catch (err) {
+            swallowError(
+              err,
+              "CpkThreadDetails.mapMessages.toolCallResult",
+              "Could not parse tool-call result JSON; rendering empty object",
+            );
             tc.result = {};
           }
         }
