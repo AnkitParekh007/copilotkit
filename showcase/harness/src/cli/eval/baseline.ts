@@ -114,7 +114,7 @@ export async function pullBaseline(
   outputPath: string,
 ): Promise<EvalBaseline> {
   const url = `${harnessUrl.replace(/\/+$/, "")}/api/probes`;
-  const res = await fetch(url);
+  const res = await fetch(url, { signal: AbortSignal.timeout(10_000) });
   if (!res.ok) {
     throw new Error(
       `Harness fetch failed: ${res.status} ${res.statusText} (${url})`,

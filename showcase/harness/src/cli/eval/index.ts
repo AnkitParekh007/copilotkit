@@ -17,7 +17,7 @@
  */
 
 import { Command, Option } from "commander";
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import path from "node:path";
 
 import { loadConfig } from "../config.js";
@@ -57,7 +57,6 @@ const log = createLogger({ component: "eval" });
 interface EvalOptions {
   level?: string;
   d5?: boolean;
-  d6?: boolean;
   pr?: string;
   branch?: string;
   scope?: string;
@@ -83,11 +82,10 @@ export function registerEvalCommand(program: Command): void {
     )
     .addOption(
       new Option("--level <level>", "probe depth")
-        .choices(["d5", "d6"])
+        .choices(["d5"])
         .default("d5"),
     )
     .option("--d5", "shorthand for --level d5")
-    .option("--d6", "shorthand for --level d6")
     .option("--pr <number>", "fetch PR into worktree and eval")
     .option("--branch <name>", "eval a specific branch in a worktree")
     .option("--scope <mode>", "affected or all", "affected")
@@ -112,19 +110,7 @@ export async function runEval(opts: EvalOptions): Promise<void> {
   const config = loadConfig();
 
   // -- 1. Resolve level ------------------------------------------------------
-  const shorthands = [opts.d5, opts.d6].filter(Boolean);
-  if (shorthands.length > 1) {
-    console.error("Error: specify at most one of --d5, --d6");
-    process.exit(1);
-  }
-  const shorthand = opts.d5 ? "d5" : opts.d6 ? "d6" : null;
-  if (shorthand && opts.level && opts.level !== "d5") {
-    console.error(
-      "Error: --level and shorthand flags (--d5, --d6) are mutually exclusive",
-    );
-    process.exit(1);
-  }
-  const level = shorthand ?? opts.level ?? "d5";
+  const level = opts.d5 ? "d5" : (opts.level ?? "d5");
 
   const parallel = parseInt(opts.parallel ?? "4", 10);
   const timeout = parseInt(opts.timeout ?? "45000", 10);
@@ -156,19 +142,16 @@ export async function runEval(opts: EvalOptions): Promise<void> {
     originalCwd = process.cwd();
 
     try {
-      execSync(`git fetch origin pull/${prNumber}/head:eval-pr-${prNumber}`, {
+      execFileSync("git", ["fetch", "origin", `pull/${prNumber}/head:eval-pr-${prNumber}`], {
         cwd: config.showcaseDir,
         stdio: "pipe",
         encoding: "utf-8",
       });
-      execSync(
-        `git worktree add ${worktreePath} eval-pr-${prNumber}`,
-        {
-          cwd: config.showcaseDir,
-          stdio: "pipe",
-          encoding: "utf-8",
-        },
-      );
+      execFileSync("git", ["worktree", "add", worktreePath, `eval-pr-${prNumber}`], {
+        cwd: config.showcaseDir,
+        stdio: "pipe",
+        encoding: "utf-8",
+      });
       process.chdir(worktreePath);
       log.info("worktree created", { path: worktreePath });
     } catch (err) {
@@ -188,7 +171,7 @@ export async function runEval(opts: EvalOptions): Promise<void> {
     originalCwd = process.cwd();
 
     try {
-      execSync(`git worktree add ${worktreePath} ${opts.branch}`, {
+      execFileSync("git", ["worktree", "add", worktreePath, opts.branch], {
         cwd: config.showcaseDir,
         stdio: "pipe",
         encoding: "utf-8",
@@ -208,7 +191,12 @@ export async function runEval(opts: EvalOptions): Promise<void> {
   let scopeResult: ScopeResult;
 
   if (opts.slug) {
-    const slugs = opts.slug.split(",").map((s) => s.trim()).filter(Boolean);
+    const rawSlugs = opts.slug.split(",").map((s) => s.trim()).filter(Boolean);
+    const unknown = rawSlugs.filter((s) => !allSlugs.includes(s));
+    if (unknown.length > 0) {
+      log.warn("unknown slugs in --slug override (skipping)", { unknown });
+    }
+    const slugs = rawSlugs.filter((s) => allSlugs.includes(s));
     scopeResult = { slugs, mode: "all", reason: `manual override: ${slugs.join(", ")}` };
     log.info("manual scope override", { slugs });
   } else if (opts.scope === "all") {
@@ -217,12 +205,12 @@ export async function runEval(opts: EvalOptions): Promise<void> {
   } else {
     let diffOutput = "";
     try {
-      diffOutput = execSync("git diff --name-only origin/main...HEAD", {
+      diffOutput = execFileSync("git", ["diff", "--name-only", "origin/main...HEAD"], {
         encoding: "utf-8",
         stdio: ["pipe", "pipe", "pipe"],
       }).trim();
     } catch {
-      diffOutput = execSync("git diff --name-only origin/main HEAD", {
+      diffOutput = execFileSync("git", ["diff", "--name-only", "origin/main", "HEAD"], {
         encoding: "utf-8",
         stdio: ["pipe", "pipe", "pipe"],
       }).trim();
@@ -238,9 +226,11 @@ export async function runEval(opts: EvalOptions): Promise<void> {
     return;
   }
 
-  console.log(
-    `\n  \x1b[36mEval scope:\x1b[0m ${scopeResult.slugs.join(", ")} (${scopeResult.mode})\n`,
-  );
+  if (!opts.json) {
+    console.log(
+      `\n  \x1b[36mEval scope:\x1b[0m ${scopeResult.slugs.join(", ")} (${scopeResult.mode})\n`,
+    );
+  }
 
   // -- 4. Baseline -----------------------------------------------------------
   const baselinePath = path.join(config.showcaseDir, ".eval-baseline.json");
@@ -286,19 +276,24 @@ export async function runEval(opts: EvalOptions): Promise<void> {
   }
 
   if (autoStarted.length > 0) {
-    console.log(
-      `  \x1b[36mStarting services:\x1b[0m ${autoStarted.join(", ")}`,
-    );
+    if (!opts.json) {
+      console.log(
+        `  \x1b[36mStarting services:\x1b[0m ${autoStarted.join(", ")}`,
+      );
+    }
     // up() includes health checks internally
     await up(autoStarted);
-    console.log("  \x1b[32mAll services healthy\x1b[0m\n");
+    if (!opts.json) {
+      console.log("  \x1b[32mAll services healthy\x1b[0m\n");
+    }
   }
 
   // -- 6-7. Run tiered tests -------------------------------------------------
   const healthySlugs = scopeResult.slugs.filter((s) => {
     try {
-      const result = execSync(
-        `docker inspect --format='{{.State.Health.Status}}' showcase-${s}`,
+      const result = execFileSync(
+        "docker",
+        ["inspect", "--format={{.State.Health.Status}}", `showcase-${s}`],
         { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] },
       ).trim();
       return result === "healthy";
@@ -338,7 +333,7 @@ export async function runEval(opts: EvalOptions): Promise<void> {
   // -- 8. Collect results ----------------------------------------------------
   const branchName = (() => {
     try {
-      return execSync("git rev-parse --abbrev-ref HEAD", { encoding: "utf-8" }).trim();
+      return execFileSync("git", ["rev-parse", "--abbrev-ref", "HEAD"], { encoding: "utf-8" }).trim();
     } catch { return opts.pr ? `PR #${opts.pr}` : opts.branch ?? "unknown"; }
   })();
 
@@ -354,7 +349,30 @@ export async function runEval(opts: EvalOptions): Promise<void> {
   });
 
   // -- 9. Format + print -----------------------------------------------------
-  const baselineAsResults = baseline as unknown as EvalResults | undefined;
+  // Adapt EvalBaseline to EvalResults for comparison. Both share the
+  // `.results[slug][test].status` shape that computeRegressions/formatMatrix read.
+  const baselineAsResults: EvalResults | undefined = baseline
+    ? {
+        version: baseline.version,
+        timestamp: baseline.timestamp,
+        branch: baseline.branch,
+        base: baseline.base,
+        level: baseline.level,
+        scope: { mode: "all", reason: "baseline", slugs: Object.keys(baseline.results) },
+        results: Object.fromEntries(
+          Object.entries(baseline.results).map(([slug, tests]) => [
+            slug,
+            Object.fromEntries(
+              Object.entries(tests).map(([testName, entry]) => [
+                testName,
+                { status: entry.status as import("./matrix.js").TestResult["status"], duration_ms: 0 },
+              ]),
+            ),
+          ]),
+        ),
+        summary: { ...baseline.summary, duration_ms: 0 },
+      }
+    : undefined;
 
   if (opts.json) {
     console.log(JSON.stringify(evalResults, null, 2));
@@ -433,7 +451,7 @@ async function cleanup(
   if (worktreeDir && originalCwd) {
     process.chdir(originalCwd);
     try {
-      execSync(`git worktree remove --force ${worktreeDir}`, {
+      execFileSync("git", ["worktree", "remove", "--force", worktreeDir], {
         cwd: showcaseDir,
         stdio: "pipe",
         encoding: "utf-8",

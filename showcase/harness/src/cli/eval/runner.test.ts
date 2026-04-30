@@ -227,10 +227,10 @@ describe("runSlug", () => {
 
     expect(result.slug).toBe("langgraph-python");
     expect(result.status).toBe("pass");
-    expect(result.tests["sends chat message"]).toBeDefined();
-    expect(result.tests["sends chat message"].status).toBe("passed");
-    expect(result.tests["sends chat message"].duration_ms).toBe(1200);
-    expect(result.tests["uses tool"].status).toBe("passed");
+    expect(result.tests["langgraph-python > sends chat message"]).toBeDefined();
+    expect(result.tests["langgraph-python > sends chat message"].status).toBe("pass");
+    expect(result.tests["langgraph-python > sends chat message"].duration_ms).toBe(1200);
+    expect(result.tests["langgraph-python > uses tool"].status).toBe("pass");
   });
 
   it("handles child process crash (non-zero exit, no JSON output)", async () => {

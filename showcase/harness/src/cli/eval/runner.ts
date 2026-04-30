@@ -140,12 +140,11 @@ export async function runSlug(
   return new Promise<SlugResult>((resolve) => {
     const args = [
       "tsx",
-      "showcase/harness/src/cli.ts",
+      "harness/src/cli.ts",
       "test",
       slug,
       "--level",
       level,
-      "--json",
     ];
 
     execFile(
@@ -215,6 +214,19 @@ interface ParsedPlaywright {
 }
 
 /**
+ * Normalize Playwright test statuses to the vocabulary expected by the
+ * matrix module ("pass", "fail", "error", "skip").
+ */
+function normalizeStatus(pwStatus: string): string {
+  if (pwStatus === "passed") return "pass";
+  if (pwStatus === "failed") return "fail";
+  if (pwStatus === "timedOut") return "error";
+  if (pwStatus === "skipped") return "skip";
+  if (pwStatus === "interrupted") return "error";
+  return pwStatus;
+}
+
+/**
  * Try to parse Playwright JSON reporter output from stdout. Returns null
  * if parsing fails. Handles the nested suites/specs/tests structure.
  */
@@ -260,20 +272,26 @@ function tryParsePlaywrightJson(stdout: string): ParsedPlaywright | null {
         }>;
         suites?: Array<unknown>;
       }>,
+      parentTitle?: string,
     ): void {
       for (const suite of suites) {
+        const suiteTitle = parentTitle
+          ? `${parentTitle} > ${suite.title}`
+          : suite.title;
+
         if (suite.specs) {
           for (const spec of suite.specs) {
             if (spec.tests) {
               for (const test of spec.tests) {
                 if (test.results && test.results.length > 0) {
                   const lastResult = test.results[test.results.length - 1];
+                  const normalized = normalizeStatus(lastResult.status);
                   const entry: {
                     status: string;
                     duration_ms: number;
                     error?: string;
                   } = {
-                    status: lastResult.status,
+                    status: normalized,
                     duration_ms: lastResult.duration,
                   };
 
@@ -281,14 +299,11 @@ function tryParsePlaywrightJson(stdout: string): ParsedPlaywright | null {
                     entry.error = lastResult.error.message;
                   }
 
-                  if (
-                    lastResult.status === "failed" ||
-                    lastResult.status === "timedOut"
-                  ) {
+                  if (normalized === "fail" || normalized === "error") {
                     hasFailures = true;
                   }
 
-                  tests[spec.title] = entry;
+                  tests[`${suiteTitle} > ${spec.title}`] = entry;
                 }
               }
             }
@@ -312,6 +327,7 @@ function tryParsePlaywrightJson(stdout: string): ParsedPlaywright | null {
               }>;
               suites?: Array<unknown>;
             }>,
+            suiteTitle,
           );
         }
       }
@@ -340,6 +356,8 @@ export async function runParallel(
   const executing = new Set<Promise<void>>();
 
   for (const slug of slugs) {
+    opts.onSlugStart?.(slug, "");
+
     const p = runSlug(slug, opts.level, opts.timeout, opts.showcaseDir)
       .then((r) => {
         results.push(r);
@@ -347,8 +365,6 @@ export async function runParallel(
       })
       .finally(() => executing.delete(p));
     executing.add(p);
-
-    opts.onSlugStart?.(slug, "");
 
     if (executing.size >= opts.maxParallel) {
       await Promise.race(executing);
@@ -376,7 +392,7 @@ export async function runTiered(
   healthySlugs: string[],
   opts: RunOptions,
 ): Promise<TieredRunResult> {
-  const tiersPath = `${opts.showcaseDir}/showcase/eval-tiers.json`;
+  const tiersPath = `${opts.showcaseDir}/eval-tiers.json`;
   const tiers = loadTiers(tiersPath, allSlugs);
 
   const healthySet = new Set(healthySlugs);
