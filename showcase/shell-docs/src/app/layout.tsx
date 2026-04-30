@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Plus_Jakarta_Sans, Spline_Sans_Mono } from "next/font/google";
 import { BrandNav } from "@/components/brand-nav";
 import { FrameworkProvider } from "@/components/framework-provider";
+import { ScarfPixel } from "@/lib/providers/scarf-pixel";
 import { getIntegrations } from "@/lib/registry";
 import "./globals.css";
 
@@ -103,6 +104,7 @@ export default function RootLayout({
         >
           {commitLabel}
         </div>
+        <ScarfPixel />
       </body>
     </html>
   );
