@@ -44,6 +44,14 @@ export async function parseMethodCall(request: Request): Promise<MethodCall> {
     throw createResponseError("Invalid JSON payload", 400);
   }
 
+  if (
+    !jsonEnvelope ||
+    typeof jsonEnvelope !== "object" ||
+    Array.isArray(jsonEnvelope)
+  ) {
+    throw createResponseError("Invalid JSON envelope", 400);
+  }
+
   const method = validateMethod(jsonEnvelope.method);
 
   return {

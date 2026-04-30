@@ -127,20 +127,50 @@ export async function handleListThreads({
 
   // Local in-memory fallback — useful for local development without Intelligence.
   //
-  // Mirrors the Intelligence-platform contract above: `agentId` is required.
-  // Returning a 400 keeps the two backends interchangeable for clients (the
-  // inspector, smoke tests, etc.) so a request that succeeds against one
-  // succeeds against the other, and the failure modes match.
+  // Mirrors the Intelligence-platform contract above: `agentId` is required,
+  // and the same validation rules apply to `limit` and `includeArchived` so a
+  // request that succeeds against one backend succeeds against the other and
+  // the 400 surfaces match. `cursor` is not implemented in the in-memory
+  // runner (no pagination); we accept any non-empty value and just ignore it.
   if (runtime.runner instanceof InMemoryAgentRunner) {
     try {
       const url = new URL(request.url);
       const agentId = url.searchParams.get("agentId");
+      const includeArchived =
+        url.searchParams.get("includeArchived") === "true";
+      const limitParam = url.searchParams.get("limit");
       if (!isValidIdentifier(agentId)) {
         return errorResponse("Valid agentId query param is required", 400);
       }
-      const threads = runtime.runner
+
+      let parsedLimit: number | undefined;
+      if (limitParam !== null) {
+        const candidate = Number(limitParam);
+        if (
+          !Number.isFinite(candidate) ||
+          !Number.isInteger(candidate) ||
+          candidate <= 0
+        ) {
+          return errorResponse(
+            "Invalid 'limit' query param: must be a positive integer",
+            400,
+          );
+        }
+        parsedLimit = candidate;
+      }
+
+      let threads = runtime.runner
         .listThreads()
         .filter((t) => t.agentId === agentId);
+      // In-memory threads are always archived: false, so this filter is
+      // effectively a no-op today, but applying it keeps the surface aligned
+      // with Intelligence and protects against future schema changes.
+      if (!includeArchived) {
+        threads = threads.filter((t) => !t.archived);
+      }
+      if (parsedLimit !== undefined) {
+        threads = threads.slice(0, parsedLimit);
+      }
       return Response.json({ threads, nextCursor: null });
     } catch (error) {
       logger.error({ err: error }, "Error listing threads");
@@ -207,6 +237,10 @@ export async function handleUpdateThread({
     const updates = { ...mutation.body };
     delete updates.agentId;
     delete updates.userId;
+    // The route param is the source of truth for which thread to update.
+    // Stripping body.threadId prevents a client from sneaking a rename of a
+    // different thread by sending {threadId: "evil"} in the PATCH body.
+    delete updates.threadId;
 
     const thread = await intelligenceRuntime.intelligence.updateThread({
       threadId,
@@ -348,13 +382,24 @@ export async function handleGetThreadMessages({
                   const fn = tc["function"] as
                     | Record<string, unknown>
                     | undefined;
+                  // Treat string `tc.args` symmetrically with string
+                  // `fn.arguments`: both are already JSON-encoded payloads
+                  // and must be passed through verbatim. Without this
+                  // branch, JSON.stringify(undefined ?? '{"foo":"bar"}')
+                  // produces a string-encoded string, which the inspector
+                  // then renders as escaped JSON.
+                  const fnArgs = fn?.["arguments"];
+                  const tcArgs = tc["args"];
+                  const args =
+                    typeof fnArgs === "string"
+                      ? fnArgs
+                      : typeof tcArgs === "string"
+                        ? tcArgs
+                        : JSON.stringify(fnArgs ?? tcArgs ?? {});
                   return {
                     id: tc["id"],
                     name: fn?.["name"] ?? tc["name"],
-                    args:
-                      typeof fn?.["arguments"] === "string"
-                        ? fn["arguments"]
-                        : JSON.stringify(fn?.["arguments"] ?? tc["args"] ?? {}),
+                    args,
                   };
                 }),
               }

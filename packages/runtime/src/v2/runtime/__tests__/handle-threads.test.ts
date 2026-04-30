@@ -949,4 +949,173 @@ describe("thread handlers", () => {
       }
     });
   });
+
+  describe("R3 regression coverage", () => {
+    it("does not double-stringify when fn.arguments is undefined and tc.args is already a JSON string", async () => {
+      const runner = new InMemoryAgentRunner();
+      // Mirrors the in-memory runner shape where the message carries a
+      // pre-serialized `args` string and no `function.arguments`. Without the
+      // string-args symmetry guard, JSON.stringify(undefined ?? args) double-
+      // encodes the payload and the inspector renders escaped JSON. The `args`
+      // field is non-standard in the canonical Message union, so we cast
+      // through unknown to plant the value the handler reads via
+      // tc["args"] anyway.
+      const messages = [
+        {
+          id: "m-args-string",
+          role: "assistant" as const,
+          toolCalls: [
+            {
+              id: "tc-1",
+              type: "function" as const,
+              function: { name: "do_thing" },
+              args: '{"foo":"bar"}',
+            },
+          ],
+        },
+      ] as unknown as Message[];
+      vi.spyOn(runner, "getThreadMessages").mockReturnValue(messages);
+      const runtime = new CopilotRuntime({ agents: {}, runner });
+
+      const response = await handleGetThreadMessages({
+        runtime,
+        request: new Request("https://example.com/threads/thread-1/messages"),
+        threadId: "thread-1",
+      });
+
+      expect(response.status).toBe(200);
+      const body = await response.json();
+      expect(body.messages[0].toolCalls[0].args).toBe('{"foo":"bar"}');
+    });
+
+    it("strips threadId from the PATCH body so a client cannot rename a different thread", async () => {
+      const intelligence = {
+        updateThread: vi
+          .fn()
+          .mockResolvedValue({ id: "thread-real", name: "Renamed" }),
+      };
+      const runtime = createIntelligenceRuntime({ intelligence });
+      const response = await handleUpdateThread({
+        runtime,
+        request: createMutationRequest("/threads/thread-real", "PATCH", {
+          agentId: "agent-1",
+          name: "Renamed",
+          threadId: "evil-thread-id",
+        }),
+        threadId: "thread-real",
+      });
+
+      expect(response.status).toBe(200);
+      expect(intelligence.updateThread).toHaveBeenCalledTimes(1);
+      const callArgs = intelligence.updateThread.mock.calls[0]![0];
+      expect(callArgs.threadId).toBe("thread-real");
+      expect(callArgs.updates).not.toHaveProperty("threadId");
+      expect(callArgs.updates).toEqual({ name: "Renamed" });
+    });
+
+    it.each([
+      ["abc", "non-numeric"],
+      ["Infinity", "Infinity"],
+      ["-5", "negative"],
+      ["0", "zero"],
+      ["1.5", "non-integer"],
+    ])(
+      "in-memory listThreads returns 400 for invalid limit (%s — %s)",
+      async (limitValue) => {
+        const runner = new InMemoryAgentRunner();
+        const listSpy = vi.spyOn(runner, "listThreads");
+        const runtime = new CopilotRuntime({ agents: {}, runner });
+
+        const response = await handleListThreads({
+          runtime,
+          request: new Request(
+            `https://example.com/threads?agentId=agent-1&limit=${encodeURIComponent(limitValue)}`,
+          ),
+        });
+
+        expect(response.status).toBe(400);
+        expect(listSpy).not.toHaveBeenCalled();
+      },
+    );
+
+    it("in-memory listThreads applies includeArchived filter (default excludes archived)", async () => {
+      const runner = new InMemoryAgentRunner();
+      // listThreads returns InMemoryThread objects whose schema declares
+      // `archived: false` literally; we cast through unknown to inject one
+      // archived thread so we can verify the filter.
+      const threads = [
+        {
+          id: "t-active",
+          name: "Active",
+          agentId: "agent-1",
+          organizationId: "",
+          createdById: "",
+          archived: false,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+        {
+          id: "t-archived",
+          name: "Archived",
+          agentId: "agent-1",
+          organizationId: "",
+          createdById: "",
+          archived: true,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+      ] as unknown as ReturnType<InMemoryAgentRunner["listThreads"]>;
+      vi.spyOn(runner, "listThreads").mockReturnValue(threads);
+      const runtime = new CopilotRuntime({ agents: {}, runner });
+
+      const defaultResponse = await handleListThreads({
+        runtime,
+        request: new Request("https://example.com/threads?agentId=agent-1"),
+      });
+      expect(defaultResponse.status).toBe(200);
+      const defaultBody = await defaultResponse.json();
+      expect(defaultBody.threads.map((t: { id: string }) => t.id)).toEqual([
+        "t-active",
+      ]);
+
+      const archivedResponse = await handleListThreads({
+        runtime,
+        request: new Request(
+          "https://example.com/threads?agentId=agent-1&includeArchived=true",
+        ),
+      });
+      expect(archivedResponse.status).toBe(200);
+      const archivedBody = await archivedResponse.json();
+      expect(
+        archivedBody.threads.map((t: { id: string }) => t.id).sort(),
+      ).toEqual(["t-active", "t-archived"]);
+    });
+
+    it("in-memory listThreads applies limit slicing", async () => {
+      const runner = new InMemoryAgentRunner();
+      const threads = Array.from({ length: 5 }, (_, i) => ({
+        id: `t-${i}`,
+        name: `Thread ${i}`,
+        agentId: "agent-1",
+        organizationId: "",
+        createdById: "",
+        archived: false,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      })) as unknown as ReturnType<InMemoryAgentRunner["listThreads"]>;
+      vi.spyOn(runner, "listThreads").mockReturnValue(threads);
+      const runtime = new CopilotRuntime({ agents: {}, runner });
+
+      const response = await handleListThreads({
+        runtime,
+        request: new Request(
+          "https://example.com/threads?agentId=agent-1&limit=2",
+        ),
+      });
+
+      expect(response.status).toBe(200);
+      const body = await response.json();
+      expect(body.threads).toHaveLength(2);
+    });
+  });
 });
