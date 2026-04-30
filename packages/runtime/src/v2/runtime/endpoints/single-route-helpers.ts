@@ -58,8 +58,11 @@ export function expectString(
   key: string,
 ): string {
   const value = params?.[key];
-  if (typeof value === "string" && value.trim().length > 0) {
-    return value;
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (trimmed.length > 0) {
+      return trimmed;
+    }
   }
 
   throw createResponseError(`Missing or invalid parameter '${key}'`, 400);

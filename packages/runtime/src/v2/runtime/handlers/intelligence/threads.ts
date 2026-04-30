@@ -90,11 +90,31 @@ export async function handleListThreads({
         return errorResponse("Valid agentId query param is required", 400);
       }
 
+      // Validate `limit` before forwarding. `Number(...)` accepts NaN,
+      // Infinity, negatives, and non-integers — none of which are valid
+      // pagination sizes. Reject with a clear 400 so callers see the bad input
+      // rather than letting it propagate into the Intelligence call.
+      let parsedLimit: number | undefined;
+      if (limitParam !== null) {
+        const candidate = Number(limitParam);
+        if (
+          !Number.isFinite(candidate) ||
+          !Number.isInteger(candidate) ||
+          candidate <= 0
+        ) {
+          return errorResponse(
+            "Invalid 'limit' query param: must be a positive integer",
+            400,
+          );
+        }
+        parsedLimit = candidate;
+      }
+
       const data = await runtime.intelligence.listThreads({
         userId: user.id,
         agentId,
         ...(includeArchived ? { includeArchived: true } : {}),
-        ...(limitParam ? { limit: Number(limitParam) } : {}),
+        ...(parsedLimit !== undefined ? { limit: parsedLimit } : {}),
         ...(cursor ? { cursor } : {}),
       });
 
@@ -112,15 +132,20 @@ export async function handleListThreads({
   // inspector, smoke tests, etc.) so a request that succeeds against one
   // succeeds against the other, and the failure modes match.
   if (runtime.runner instanceof InMemoryAgentRunner) {
-    const url = new URL(request.url);
-    const agentId = url.searchParams.get("agentId");
-    if (!isValidIdentifier(agentId)) {
-      return errorResponse("Valid agentId query param is required", 400);
+    try {
+      const url = new URL(request.url);
+      const agentId = url.searchParams.get("agentId");
+      if (!isValidIdentifier(agentId)) {
+        return errorResponse("Valid agentId query param is required", 400);
+      }
+      const threads = runtime.runner
+        .listThreads()
+        .filter((t) => t.agentId === agentId);
+      return Response.json({ threads, nextCursor: null });
+    } catch (error) {
+      logger.error({ err: error }, "Error listing threads");
+      return errorResponse("Failed to list threads", 500);
     }
-    const threads = runtime.runner
-      .listThreads()
-      .filter((t) => t.agentId === agentId);
-    return Response.json({ threads, nextCursor: null });
   }
 
   return errorResponse(
@@ -143,8 +168,23 @@ export function handleClearThreads({
 }: ThreadsHandlerParams): Response {
   if (runtime.runner instanceof InMemoryAgentRunner) {
     runtime.runner.clearThreads();
+    return new Response(null, { status: 204 });
   }
-  return new Response(null, { status: 204 });
+
+  // Intentionally no-op for Intelligence platform — real history lives in the
+  // database and must not be wiped by a client-side page load. We still return
+  // 204 in that case so the inspector's "session start" reset stays a no-op.
+  if (isIntelligenceRuntime(runtime)) {
+    return new Response(null, { status: 204 });
+  }
+
+  // Neither InMemory nor Intelligence is configured — match the other thread
+  // handlers and return 422 so the caller learns the request didn't succeed
+  // instead of silently believing it did.
+  return errorResponse(
+    "Missing CopilotKitIntelligence configuration. Thread operations require a CopilotKitIntelligence instance to be provided in CopilotRuntime options.",
+    422,
+  );
 }
 
 export async function handleUpdateThread({
@@ -291,18 +331,20 @@ export async function handleGetThreadMessages({
 
   // Local in-memory fallback — useful for local development without Intelligence
   if (runtime.runner instanceof InMemoryAgentRunner) {
-    const messages = runtime.runner.getThreadMessages(threadId);
-    // Map ag-ui Message objects to the same shape the Intelligence platform returns
-    const mapped = messages.map((msg) => {
-      const m = msg as Record<string, unknown>;
-      return {
-        id: m["id"],
-        role: m["role"],
-        ...(m["content"] !== undefined ? { content: m["content"] } : {}),
-        ...(Array.isArray(m["toolCalls"]) && m["toolCalls"].length > 0
-          ? {
-              toolCalls: (m["toolCalls"] as Array<Record<string, unknown>>).map(
-                (tc) => {
+    try {
+      const messages = runtime.runner.getThreadMessages(threadId);
+      // Map ag-ui Message objects to the same shape the Intelligence platform returns
+      const mapped = messages.map((msg) => {
+        const m = msg as Record<string, unknown>;
+        return {
+          id: m["id"],
+          role: m["role"],
+          ...(m["content"] !== undefined ? { content: m["content"] } : {}),
+          ...(Array.isArray(m["toolCalls"]) && m["toolCalls"].length > 0
+            ? {
+                toolCalls: (
+                  m["toolCalls"] as Array<Record<string, unknown>>
+                ).map((tc) => {
                   const fn = tc["function"] as
                     | Record<string, unknown>
                     | undefined;
@@ -314,16 +356,25 @@ export async function handleGetThreadMessages({
                         ? fn["arguments"]
                         : JSON.stringify(fn?.["arguments"] ?? tc["args"] ?? {}),
                   };
-                },
-              ),
-            }
-          : {}),
-        ...(m["toolCallId"] !== undefined
-          ? { toolCallId: m["toolCallId"] }
-          : {}),
-      };
-    });
-    return Response.json({ messages: mapped });
+                }),
+              }
+            : {}),
+          ...(m["toolCallId"] !== undefined
+            ? { toolCallId: m["toolCallId"] }
+            : {}),
+          // Activity messages (Generative UI) carry an activityType the
+          // inspector reads to render the right placeholder. The Intelligence
+          // platform forwards this field; the in-memory mapping must match.
+          ...(m["role"] === "activity" && typeof m["activityType"] === "string"
+            ? { activityType: m["activityType"] }
+            : {}),
+        };
+      });
+      return Response.json({ messages: mapped });
+    } catch (error) {
+      logger.error({ err: error, threadId }, "Error fetching thread messages");
+      return errorResponse("Failed to fetch thread messages", 500);
+    }
   }
 
   return errorResponse(

@@ -68,6 +68,28 @@ describe("thread handlers", () => {
     });
   });
 
+  it("returns 500 when the in-memory listThreads throws and does not leak the inner error message", async () => {
+    const runner = new InMemoryAgentRunner();
+    const innerMessage = "boom: secret connection details";
+    vi.spyOn(runner, "listThreads").mockImplementation(() => {
+      throw new Error(innerMessage);
+    });
+    const runtime = new CopilotRuntime({ agents: {}, runner });
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    try {
+      const response = await handleListThreads({
+        runtime,
+        request: new Request("https://example.com/threads?agentId=agent-1"),
+      });
+      expect(response.status).toBe(500);
+      const body = await response.json();
+      expect(JSON.stringify(body)).not.toContain("secret connection details");
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
   it("lists threads using identifyUser and the request agentId", async () => {
     const intelligence = {
       listThreads: vi.fn().mockResolvedValue({
@@ -421,6 +443,23 @@ describe("thread handlers", () => {
       expect(response.status).toBe(204);
       expect(intelligence.listThreads).not.toHaveBeenCalled();
     });
+
+    it("returns 422 when neither in-memory nor intelligence is configured", async () => {
+      // Mirrors the sibling list/messages/events/state handlers: silently
+      // returning 204 deceives the client into thinking the clear succeeded.
+      const runtime = createIntelligenceRuntime({ intelligence: undefined });
+
+      const response = handleClearThreads({
+        runtime,
+        request: new Request("https://example.com/threads"),
+      });
+
+      expect(response.status).toBe(422);
+      const body = await response.json();
+      expect(body).toMatchObject({
+        error: expect.any(String),
+      });
+    });
   });
 
   describe("handleGetThreadMessages", () => {
@@ -527,6 +566,61 @@ describe("thread handlers", () => {
       });
 
       expect(response.status).toBe(422);
+    });
+
+    it("forwards activityType for activity-role messages from the in-memory runner", async () => {
+      const runner = new InMemoryAgentRunner();
+      // Activity messages are an inspector-only message shape carrying the
+      // Generative-UI activityType. The frontend reads `msg.activityType ??
+      // "unknown"`, so dropping the field on the wire makes every activity
+      // render as "unknown" — that's the bug this test pins down.
+      const messages = [
+        {
+          id: "act-1",
+          role: "activity" as const,
+          activityType: "tool_call_render",
+        },
+      ] as unknown as Message[];
+      vi.spyOn(runner, "getThreadMessages").mockReturnValue(messages);
+      const runtime = new CopilotRuntime({ agents: {}, runner });
+
+      const response = await handleGetThreadMessages({
+        runtime,
+        request: new Request("https://example.com/threads/thread-1/messages"),
+        threadId: "thread-1",
+      });
+
+      expect(response.status).toBe(200);
+      const body = await response.json();
+      expect(body.messages).toHaveLength(1);
+      expect(body.messages[0]).toMatchObject({
+        id: "act-1",
+        role: "activity",
+        activityType: "tool_call_render",
+      });
+    });
+
+    it("returns 500 when the in-memory runner throws and does not leak the inner error message", async () => {
+      const runner = new InMemoryAgentRunner();
+      const innerMessage = "boom: secret connection details";
+      vi.spyOn(runner, "getThreadMessages").mockImplementation(() => {
+        throw new Error(innerMessage);
+      });
+      const runtime = new CopilotRuntime({ agents: {}, runner });
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+      try {
+        const response = await handleGetThreadMessages({
+          runtime,
+          request: new Request("https://example.com/threads/thread-1/messages"),
+          threadId: "thread-1",
+        });
+        expect(response.status).toBe(500);
+        const body = await response.json();
+        expect(JSON.stringify(body)).not.toContain("secret connection details");
+      } finally {
+        errorSpy.mockRestore();
+      }
     });
 
     it("maps tool-call and tool-result messages from the in-memory runner without as-never casts", async () => {
@@ -638,6 +732,31 @@ describe("thread handlers", () => {
       agentId: "agent-1",
     });
   });
+
+  it.each([
+    ["abc", "non-numeric"],
+    ["Infinity", "Infinity"],
+    ["-5", "negative"],
+    ["0", "zero"],
+    ["1.5", "non-integer"],
+  ])(
+    "returns 400 when listThreads receives an invalid limit (%s — %s)",
+    async (limitValue) => {
+      const intelligence = {
+        listThreads: vi.fn(),
+      };
+      const identifyUser = createIdentifyUser();
+      const runtime = createIntelligenceRuntime({ intelligence, identifyUser });
+      const request = new Request(
+        `https://example.com/threads?agentId=agent-1&limit=${encodeURIComponent(limitValue)}`,
+      );
+
+      const response = await handleListThreads({ runtime, request });
+
+      expect(response.status).toBe(400);
+      expect(intelligence.listThreads).not.toHaveBeenCalled();
+    },
+  );
 
   describe("handleGetThreadEvents", () => {
     it("returns events from the in-memory runner for a known thread", async () => {
