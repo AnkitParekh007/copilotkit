@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Plus_Jakarta_Sans, Spline_Sans_Mono } from "next/font/google";
+import Script from "next/script";
 import { BrandNav } from "@/components/brand-nav";
 import { FrameworkProvider } from "@/components/framework-provider";
 import { getIntegrations } from "@/lib/registry";
@@ -77,11 +78,37 @@ export default function RootLayout({
         ? "unknown"
         : rawSha.slice(0, 7);
 
+  const REO_KEY = process.env.NEXT_PUBLIC_REO_KEY;
+
   return (
     <html
       lang="en"
       className={`${plusJakartaSans.variable} ${splineSansMono.variable}`}
     >
+      <head>
+        <Script
+          id="reo-init-script"
+          strategy="afterInteractive"
+          dangerouslySetInnerHTML={{
+            __html: `
+                  !function(){
+                    var e, t, n;
+                    e = "${REO_KEY}";
+                    t = function() {
+                      if (window.Reo) {
+                        window.Reo.init({ clientID: "${REO_KEY}" });
+                      }
+                    };
+                    n = document.createElement("script");
+                    n.src = "https://static.reo.dev/" + e + "/reo.js";
+                    n.defer = true;
+                    n.onload = t;
+                    document.head.appendChild(n);
+                  }();
+                `,
+          }}
+        />
+      </head>
       <body className="min-h-screen">
         <FrameworkProvider knownFrameworks={knownFrameworks}>
           <BrandNav />
