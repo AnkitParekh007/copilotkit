@@ -1,3 +1,5 @@
+import { logger } from "../../../lib/logger";
+
 const METHOD_NAMES = [
   "agent/run",
   "agent/connect",
@@ -34,6 +36,11 @@ export async function parseMethodCall(request: Request): Promise<MethodCall> {
   try {
     jsonEnvelope = (await request.clone().json()) as JsonEnvelope;
   } catch (error) {
+    logger.swallow(
+      error,
+      "single-route.parseMethodCall",
+      "Invalid JSON payload on single-route endpoint",
+    );
     throw createResponseError("Invalid JSON payload", 400);
   }
 

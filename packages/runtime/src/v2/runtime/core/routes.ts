@@ -28,6 +28,7 @@
  */
 import type { CopilotRuntimeLike } from "./runtime";
 import type { RouteInfo } from "./hooks";
+import { logger } from "../../../lib/logger";
 import { handleRunAgent } from "../handlers/handle-run";
 import { handleConnectAgent } from "../handlers/handle-connect";
 import { handleStopAgent } from "../handlers/handle-stop";
@@ -87,7 +88,12 @@ export interface RouteEntry {
 function safeDecodeURIComponent(value: string): string | null {
   try {
     return decodeURIComponent(value);
-  } catch {
+  } catch (err) {
+    logger.swallow(
+      err,
+      "routes.safeDecodeURIComponent",
+      "decodeURIComponent failed; returning null",
+    );
     return null;
   }
 }
