@@ -1,5 +1,6 @@
 import { LitElement, css, html, nothing } from "lit";
 import type { ɵThread } from "@copilotkit/core";
+import { safeDate } from "../lib/safe";
 
 // ─── cpk-thread-list ────────────────────────────────────────────────────────
 
@@ -152,8 +153,11 @@ class CpkThreadList extends LitElement {
   `;
 
   private relativeTime(dateStr: string): string {
-    const date = new Date(dateStr);
-    const diffMs = Date.now() - date.getTime();
+    const date = safeDate(dateStr);
+    if (!date) return "—";
+    // Clamp negative diffs (clock skew, server-future timestamps) to 0
+    // instead of rendering a meaningless "-3s ago".
+    const diffMs = Math.max(0, Date.now() - date.getTime());
     const diffSec = Math.floor(diffMs / 1000);
     if (diffSec < 60) return `${diffSec}s ago`;
     const diffMin = Math.floor(diffSec / 60);
@@ -165,7 +169,9 @@ class CpkThreadList extends LitElement {
   }
 
   private get filtered(): ɵThread[] {
-    const q = this._query.toLowerCase();
+    // Trim before short-circuiting so a query of "   " behaves like an empty
+    // query (returning all threads) rather than filtering against whitespace.
+    const q = this._query.trim().toLowerCase();
     if (!q) return this.threads;
     return this.threads.filter(
       (t) =>

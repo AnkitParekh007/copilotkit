@@ -1,4 +1,5 @@
 import { LitElement, css, html, nothing } from "lit";
+import { getCookie } from "../lib/safe";
 
 // ─── cpk-thread-gate ─────────────────────────────────────────────────────────
 // Owns the early-access gate UI and its state. Reads the unlock cookie on
@@ -319,10 +320,9 @@ class CpkThreadGate extends LitElement {
     // If the unlock cookie is already present, immediately notify the parent
     // so it can skip the gate UI entirely (matches the prior behavior on
     // WebInspectorElement.hydrateStateFromStorageEarly).
-    if (
-      typeof document !== "undefined" &&
-      document.cookie.includes("cpk_threads_access=1")
-    ) {
+    // getCookie matches the exact name so a substring like
+    // "xcpk_threads_access" can never satisfy this check.
+    if (getCookie("cpk_threads_access") === "1") {
       this.dispatchEvent(
         new CustomEvent("unlock", { bubbles: true, composed: true }),
       );

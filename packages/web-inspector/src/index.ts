@@ -47,6 +47,7 @@ import {
 import type { PersistedState } from "./lib/persistence";
 import { ThreadDividerController } from "./lib/resize-controller";
 import { swallowError } from "./lib/swallow";
+import { getCookie } from "./lib/safe";
 import "./elements/cpk-thread-list";
 import "./elements/cpk-thread-details";
 import "./elements/cpk-thread-gate";
@@ -2168,8 +2169,10 @@ ${argsString}</pre
     }
 
     // Restore early-access unlock from cookie set by cpk-thread-gate, so the
-    // gate is never rendered for users who already unlocked.
-    if (document.cookie.includes("cpk_threads_access=1")) {
+    // gate is never rendered for users who already unlocked. Use exact-name
+    // matching via getCookie so a value like "xcpk_threads_access=1" cannot
+    // accidentally unlock the gate.
+    if (getCookie("cpk_threads_access") === "1") {
       this._threadsUnlocked = true;
     }
 
