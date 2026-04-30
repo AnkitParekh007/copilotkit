@@ -14,7 +14,14 @@ export function highlightedJson(obj: unknown): string {
     bool: "#c0333a",
     nil: "#838389",
   };
-  const json = JSON.stringify(obj, null, 2);
+  // JSON.stringify throws on circular references — render a literal sentinel
+  // instead of letting the throw propagate up and crash the surrounding tab.
+  let json: string;
+  try {
+    json = JSON.stringify(obj, null, 2);
+  } catch {
+    return "[unrenderable: circular reference]";
+  }
   if (!json) return "";
   const parts: string[] = [];
   let lastIndex = 0;
