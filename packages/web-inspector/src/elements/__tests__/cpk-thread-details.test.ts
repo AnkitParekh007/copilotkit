@@ -59,7 +59,7 @@ function installFetchMock(): {
   globalThis.fetch = vi.fn(
     (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
       const url = typeof input === "string" ? input : input.toString();
-      return new Promise<Response>((resolve, reject) => {
+      const promise = new Promise<Response>((resolve, reject) => {
         const call: FetchCall = {
           url,
           signal: init?.signal ?? undefined,
@@ -69,12 +69,22 @@ function installFetchMock(): {
         calls.push(call);
         // Forward AbortController.abort() into the pending promise so
         // production code's `signal: controller.signal` path resolves.
+        // Production code's `signal.aborted` short-circuit handles the
+        // aborted case, so we still reject with AbortError to mirror the
+        // browser's fetch behavior.
         init?.signal?.addEventListener("abort", () => {
           const err = new Error("aborted");
           err.name = "AbortError";
           reject(err);
         });
       });
+      // Attach a no-op .catch so an AbortError rejection doesn't surface as
+      // an unhandled promise rejection in tests that switch threadIds before
+      // resolving the original fetch. Production code awaits these promises
+      // and short-circuits via signal.aborted; the no-op catch is purely a
+      // test-environment stability shim.
+      promise.catch(() => {});
+      return promise;
     },
   ) as unknown as typeof fetch;
   return {

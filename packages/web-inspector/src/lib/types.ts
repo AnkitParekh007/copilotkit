@@ -53,6 +53,14 @@ export interface ConversationToolCall {
   result: Record<string, unknown> | null;
   createdAt: string;
   groupId?: string;
+  /**
+   * True when the runtime returned tool-call args/result that failed JSON.parse
+   * and we fell back to an empty object. Lets the renderer surface a small
+   * "(parse error)" badge so the user knows the underlying data is broken
+   * rather than just empty.
+   */
+  argsParseError?: boolean;
+  resultParseError?: boolean;
 }
 
 export interface ConversationReasoning {
@@ -78,8 +86,6 @@ export interface ConversationGenerativeUIItem {
   id: string;
   type: "generative-ui";
   activityType: string;
-  /** Pre-rendered HTML for demo/scripted mode. Not present for live runtime data. */
-  html?: string;
   createdAt: string;
 }
 

@@ -366,6 +366,14 @@ class CpkThreadDetails extends LitElement {
       letter-spacing: 0.3px;
     }
 
+    .cpk-td__parse-error {
+      margin-left: 6px;
+      color: #c0333a;
+      font-weight: 500;
+      text-transform: none;
+      letter-spacing: normal;
+    }
+
     .cpk-td__tool-pre {
       margin: 0;
       font-family: "Spline Sans Mono", monospace;
@@ -625,11 +633,20 @@ class CpkThreadDetails extends LitElement {
   `;
 
   updated(changed: Map<string, unknown>): void {
-    if (this.threadId !== this._lastFetchedThreadId) {
+    const threadIdChanged = this.threadId !== this._lastFetchedThreadId;
+    // runtimeUrl and headers changes also need to trigger a refetch — without
+    // this, a runtime swap (e.g. dev → prod, or auth header rotation) would
+    // leave the panel showing stale data fetched against the previous URL.
+    const transportChanged =
+      changed.has("runtimeUrl") || changed.has("headers");
+
+    if (threadIdChanged || transportChanged) {
       this._lastFetchedThreadId = this.threadId;
-      this._tab = "conversation";
-      this._expandedTools = new Set();
-      this._expandedMessages = new Set();
+      if (threadIdChanged) {
+        this._tab = "conversation";
+        this._expandedTools = new Set();
+        this._expandedMessages = new Set();
+      }
       // Clear previous-thread fetched data BEFORE kicking off new fetches so
       // the previous thread's events/state cannot flash on screen during the
       // gap between fetch start and response. Errors are also reset so a
@@ -647,7 +664,11 @@ class CpkThreadDetails extends LitElement {
       this._abortAllFetches();
 
       const override = this.conversationOverride;
-      if (override !== null) {
+      // Use loose != null so an explicit `undefined` (which is !== null) is
+      // also treated as "no override" instead of being assigned to
+      // _conversation, which would break downstream renderers expecting an
+      // array. Same intent below for the override-only branch.
+      if (override != null) {
         this._conversation = override;
       } else if (this.threadId) {
         void this.fetchMessages(this.threadId);
@@ -661,7 +682,7 @@ class CpkThreadDetails extends LitElement {
       }
     } else if (changed.has("conversationOverride")) {
       const override = this.conversationOverride;
-      if (override !== null) {
+      if (override != null) {
         this._conversation = override;
       }
     }
@@ -687,15 +708,34 @@ class CpkThreadDetails extends LitElement {
    * each tab fetcher only needs to declare which URL to hit and how to parse
    * the response body. Caller supplies the tab descriptor; the helper writes
    * back to the matching reactive state slot.
+   *
+   * The discriminated `spec.tab` field is used to narrow which reactive state
+   * slot receives the parsed value, eliminating `as unknown as T[]` casts.
    */
-  private async _fetchTab<T>(
-    tab: "messages" | "events" | "state",
+  private async _fetchTab(
+    spec:
+      | {
+          tab: "messages";
+          parser: (data: unknown) => ConversationItem[];
+          fallback: ConversationItem[];
+          friendlyError: string;
+        }
+      | {
+          tab: "events";
+          parser: (data: unknown) => ApiAgentEvent[];
+          fallback: ApiAgentEvent[];
+          friendlyError: string;
+        }
+      | {
+          tab: "state";
+          parser: (data: unknown) => Record<string, unknown> | null;
+          fallback: Record<string, unknown> | null;
+          friendlyError: string;
+        },
     threadId: string,
-    parser: (data: unknown) => T,
-    fallback: T,
   ): Promise<void> {
-    const path =
-      tab === "messages" ? "messages" : tab === "events" ? "events" : "state";
+    const { tab, parser, fallback, friendlyError } = spec;
+    const path = tab;
 
     // Reset the 501 sentinel for tabs that have one; messages doesn't.
     if (tab === "events") this._eventsNotAvailable = false;
@@ -776,43 +816,37 @@ class CpkThreadDetails extends LitElement {
       }
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = (await res.json()) as unknown;
-      const parsed = parser(data);
+      // Discriminated union ensures parser type matches the slot we write to,
+      // so no `as unknown as T[]` casts are needed.
       if (tab === "messages") {
-        this._conversation = parsed as unknown as ConversationItem[];
+        this._conversation = parser(data);
       } else if (tab === "events") {
-        this._fetchedEvents = parsed as unknown as ApiAgentEvent[];
+        this._fetchedEvents = parser(data);
       } else {
-        this._fetchedState = parsed as unknown as Record<
-          string,
-          unknown
-        > | null;
+        this._fetchedState = parser(data);
       }
     } catch (err) {
       if (err instanceof Error && err.name === "AbortError") return;
-      const message =
-        err instanceof Error
-          ? err.message
-          : `Failed to load ${tab === "messages" ? "messages" : tab === "events" ? "events" : "state"}`;
-      // Surface a breadcrumb in addition to the user-visible error message so
-      // failures (network issues, 5xx, malformed JSON) leave a console trail
-      // even when the user doesn't notice the error pane.
+      // Surface a breadcrumb (with the raw err) in addition to the user-visible
+      // error so failures (network issues, 5xx, malformed JSON) leave a console
+      // trail. Don't leak err.message into the UI: the raw message can include
+      // runtime URL paths, internal hostnames, or stack-derived strings. The
+      // user gets a category-appropriate friendly message; ops/devs see the
+      // detailed cause in the swallowError breadcrumb.
       swallowError(
         err,
         `CpkThreadDetails._fetchTab.${tab}`,
         `Failed to load /${tab} for thread ${threadId}`,
       );
       if (tab === "messages") {
-        this._messagesError = message;
-        this._conversation = fallback as unknown as ConversationItem[];
+        this._messagesError = friendlyError;
+        this._conversation = fallback;
       } else if (tab === "events") {
-        this._eventsError = message;
-        this._fetchedEvents = fallback as unknown as ApiAgentEvent[];
+        this._eventsError = friendlyError;
+        this._fetchedEvents = fallback;
       } else {
-        this._stateError = message;
-        this._fetchedState = fallback as unknown as Record<
-          string,
-          unknown
-        > | null;
+        this._stateError = friendlyError;
+        this._fetchedState = fallback;
       }
     } finally {
       // Don't toggle the loading flag if we were aborted — a newer fetch is
@@ -826,38 +860,47 @@ class CpkThreadDetails extends LitElement {
   }
 
   private fetchMessages(threadId: string): Promise<void> {
-    return this._fetchTab<ConversationItem[]>(
-      "messages",
-      threadId,
-      (data) => {
-        const { messages } = data as { messages: ApiThreadMessage[] };
-        return this.mapMessages(messages);
+    return this._fetchTab(
+      {
+        tab: "messages",
+        parser: (data) => {
+          const { messages } = data as { messages: ApiThreadMessage[] };
+          return this.mapMessages(messages);
+        },
+        fallback: [],
+        friendlyError: "Couldn't load messages",
       },
-      [],
+      threadId,
     );
   }
 
   private fetchEvents(threadId: string): Promise<void> {
-    return this._fetchTab<ApiAgentEvent[]>(
-      "events",
-      threadId,
-      (data) => {
-        const { events } = data as { events: Array<Record<string, unknown>> };
-        return this.mapApiEvents(events);
+    return this._fetchTab(
+      {
+        tab: "events",
+        parser: (data) => {
+          const { events } = data as { events: Array<Record<string, unknown>> };
+          return this.mapApiEvents(events);
+        },
+        fallback: [],
+        friendlyError: "Couldn't load events",
       },
-      [],
+      threadId,
     );
   }
 
   private fetchState(threadId: string): Promise<void> {
-    return this._fetchTab<Record<string, unknown> | null>(
-      "state",
-      threadId,
-      (data) => {
-        const { state } = data as { state: Record<string, unknown> | null };
-        return state ?? null;
+    return this._fetchTab(
+      {
+        tab: "state",
+        parser: (data) => {
+          const { state } = data as { state: Record<string, unknown> | null };
+          return state ?? null;
+        },
+        fallback: null,
+        friendlyError: "Couldn't load state",
       },
-      null,
+      threadId,
     );
   }
 
@@ -876,9 +919,11 @@ class CpkThreadDetails extends LitElement {
         if (msg.toolCalls?.length) {
           for (const tc of msg.toolCalls) {
             let args: Record<string, unknown> = {};
+            let argsParseError = false;
             try {
               args = JSON.parse(tc.args) as Record<string, unknown>;
             } catch (err) {
+              argsParseError = true;
               swallowError(
                 err,
                 "CpkThreadDetails.mapMessages.toolCallArgs",
@@ -893,6 +938,7 @@ class CpkThreadDetails extends LitElement {
               arguments: args,
               result: null,
               createdAt: "",
+              argsParseError,
             };
             toolCallMap.set(tc.id, item);
             items.push(item);
@@ -928,6 +974,7 @@ class CpkThreadDetails extends LitElement {
               "Could not parse tool-call result JSON; rendering empty object",
             );
             tc.result = {};
+            tc.resultParseError = true;
           }
         }
       }
@@ -1284,10 +1331,18 @@ class CpkThreadDetails extends LitElement {
           expanded
             ? html`
               <div class="cpk-td__tool-body">
-                <div class="cpk-td__tool-section-label">Arguments</div>
-                <pre class="cpk-td__tool-pre">
-${unsafeHTML(highlightedJson(item.arguments))}</pre
-                >
+                <div class="cpk-td__tool-section-label">
+                  Arguments${
+                    item.argsParseError
+                      ? html`<span
+                          class="cpk-td__parse-error"
+                          title="Tool-call arguments JSON could not be parsed"
+                          >(parse error)</span
+                        >`
+                      : nothing
+                  }
+                </div>
+                <pre class="cpk-td__tool-pre">${unsafeHTML(highlightedJson(item.arguments))}</pre>
                 ${
                   item.result
                     ? html`
@@ -1295,11 +1350,17 @@ ${unsafeHTML(highlightedJson(item.arguments))}</pre
                         class="cpk-td__tool-section-label"
                         style="margin-top:8px"
                       >
-                        Result
+                        Result${
+                          item.resultParseError
+                            ? html`<span
+                                class="cpk-td__parse-error"
+                                title="Tool-call result JSON could not be parsed"
+                                >(parse error)</span
+                              >`
+                            : nothing
+                        }
                       </div>
-                      <pre class="cpk-td__tool-pre">
-${unsafeHTML(highlightedJson(item.result))}</pre
-                      >
+                      <pre class="cpk-td__tool-pre">${unsafeHTML(highlightedJson(item.result))}</pre>
                     `
                     : nothing
                 }
@@ -1323,6 +1384,10 @@ ${unsafeHTML(highlightedJson(item.result))}</pre
   }
 
   private renderGenerativeUI(item: ConversationGenerativeUIItem) {
+    // The previously-supported `unsafeHTML(item.html)` branch was for a
+    // demo/scripted mode that no longer exists. Removing it closes the
+    // stored-XSS sink entirely: any future runtime-data path must go through
+    // a sanitized renderer, not raw HTML injection.
     return html`
       <div class="cpk-td__genui">
         <div class="cpk-td__genui-badge">
@@ -1331,15 +1396,9 @@ ${unsafeHTML(highlightedJson(item.result))}</pre
           </svg>
           Generative UI
         </div>
-        ${
-          item.html
-            ? html`<div class="cpk-td__genui-card">
-              ${unsafeHTML(item.html)}
-            </div>`
-            : html`<div class="cpk-td__genui-placeholder">
-              ${item.activityType} — rendered in chat
-            </div>`
-        }
+        <div class="cpk-td__genui-placeholder">
+          ${item.activityType} — rendered in chat
+        </div>
       </div>
     `;
   }
@@ -1404,9 +1463,7 @@ ${unsafeHTML(highlightedJson(item.result))}</pre
         </div>
       `;
     }
-    return html`<pre class="cpk-td__json-block">
-${unsafeHTML(highlightedJson(this.activeState))}</pre
-    >`;
+    return html`<pre class="cpk-td__json-block">${unsafeHTML(highlightedJson(this.activeState))}</pre>`;
   }
 
   private renderEvents() {
@@ -1454,9 +1511,7 @@ ${unsafeHTML(highlightedJson(this.activeState))}</pre
               >${formatTimestamp(event.timestamp)}</span
             >
           </div>
-          <pre class="cpk-td__event-payload">
-${unsafeHTML(highlightedJson(event.payload))}</pre
-          >
+          <pre class="cpk-td__event-payload">${unsafeHTML(highlightedJson(event.payload))}</pre>
         </div>
       `;
     })}`;
