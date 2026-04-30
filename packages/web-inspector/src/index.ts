@@ -184,6 +184,13 @@ export class WebInspectorElement extends LitElement {
     autoAttachCore: { type: Boolean, attribute: "auto-attach-core" },
   } as const;
 
+  // Stable frozen reference used as the fallback for `.headers` on
+  // <cpk-thread-details> when no core is attached. Returning `?? {}` would
+  // allocate a new object on every render and force the child element to
+  // re-fetch on every parent update.
+  private static readonly EMPTY_HEADERS: Readonly<Record<string, string>> =
+    Object.freeze({});
+
   private _core: CopilotKitCore | null = null;
   private coreSubscriber: CopilotKitCoreSubscriber | null = null;
   private coreUnsubscribe: (() => void) | null = null;
@@ -447,7 +454,7 @@ export class WebInspectorElement extends LitElement {
     store.start();
     store.setContext({
       runtimeUrl: core.runtimeUrl,
-      headers: {},
+      headers: core.headers ?? {},
       agentId,
     });
     this._ownedThreadStores.set(agentId, store);
@@ -513,6 +520,18 @@ export class WebInspectorElement extends LitElement {
       onRuntimeConnectionStatusChanged: ({ status }) => {
         this.runtimeStatus = status;
         if (status === "connected") {
+          // setRuntimeUrl() triggers updateRuntimeConnection which fires
+          // this handler, so this is also the recovery path for agents
+          // that were registered before runtimeUrl was set (and therefore
+          // had ensureOwnedThreadStore() early-return).
+          const currentCore = this.core;
+          if (currentCore) {
+            for (const agent of Object.values(currentCore.agents)) {
+              if (agent?.agentId && !this._ownedThreadStores.has(agent.agentId)) {
+                this.ensureOwnedThreadStore(agent.agentId);
+              }
+            }
+          }
           for (const agentId of this._ownedThreadStores.keys()) {
             this.refreshOwnedThreadStore(agentId);
           }
@@ -526,6 +545,19 @@ export class WebInspectorElement extends LitElement {
       onPropertiesChanged: ({ properties }) => {
         this.coreProperties = properties;
         this.requestUpdate();
+      },
+      onHeadersChanged: ({ headers }) => {
+        // Push the new headers into every owned thread store so authenticated
+        // runtimes pick up auth-token rotations on subsequent thread-list fetches.
+        const core = this.core;
+        if (!core?.runtimeUrl) return;
+        for (const [agentId, store] of this._ownedThreadStores) {
+          store.setContext({
+            runtimeUrl: core.runtimeUrl,
+            headers: headers ?? {},
+            agentId,
+          });
+        }
       },
       onError: ({ code, error }) => {
         this.lastCoreError = { code, message: error.message };
@@ -574,6 +606,10 @@ export class WebInspectorElement extends LitElement {
             this._ownedThreadStores.delete(agentId);
           }
         }
+        // The selected thread may have belonged to the store that was just
+        // unregistered. Revalidate so the details panel doesn't keep fetching
+        // against a thread that no longer appears in any list.
+        this.autoSelectLatestThread();
         this.requestUpdate();
       },
       onAgentRunStarted: ({ agent }) => {
@@ -3523,7 +3559,7 @@ ${argsString}</pre
                   .threadId=${this.selectedThreadId}
                   .thread=${selectedThread}
                   .runtimeUrl=${this._core?.runtimeUrl ?? ""}
-                  .headers=${this._core?.headers ?? {}}
+                  .headers=${this._core?.headers ?? WebInspectorElement.EMPTY_HEADERS}
                   .agentStateInput=${
                     selectedThread
                       ? this.getLatestStateForAgent(selectedThread.agentId)

@@ -691,6 +691,13 @@ class CpkThreadDetails extends LitElement {
       const override = this.conversationOverride;
       if (override != null) {
         this._conversation = override;
+      } else if (this.threadId) {
+        // Override transitioned to null without a threadId/transport change.
+        // Refetch from the runtime so we don't keep showing the stale override
+        // items.
+        void this.fetchMessages(this.threadId);
+      } else {
+        this._conversation = [];
       }
     }
   }
@@ -823,6 +830,11 @@ class CpkThreadDetails extends LitElement {
       }
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = (await res.json()) as unknown;
+      // Guard against the race where a newer fetch (triggered by a fast
+      // threadId switch) has already resolved and overwritten _conversation /
+      // _fetchedEvents / _fetchedState. Without this check, an older fetch's
+      // resumed microtask would clobber the newer thread's already-loaded data.
+      if (controller.signal.aborted) return;
       // Discriminated union ensures parser type matches the slot we write to,
       // so no `as unknown as T[]` casts are needed.
       if (tab === "messages") {

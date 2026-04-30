@@ -18,6 +18,9 @@ type InspectorInternals = {
   cachedTools: Array<{ name: string }>;
   _ownedThreadStores: Map<string, unknown>;
   _threadStoreSubscriptions: Map<string, () => void>;
+  _threadsByAgent: Map<string, Array<{ id: string; agentId: string }>>;
+  _threads: Array<{ id: string; agentId: string }>;
+  selectedThreadId: string | null;
 };
 
 type InspectorContextInternals = {
@@ -92,6 +95,7 @@ type MockCore = {
   agents: Record<string, AbstractAgent>;
   context: Record<string, unknown>;
   properties: Record<string, unknown>;
+  headers: Record<string, string>;
   runtimeConnectionStatus: CopilotKitCoreRuntimeConnectionStatus;
   runtimeUrl?: string;
   subscribe: (subscriber: CopilotKitCoreSubscriber) => {
@@ -105,7 +109,7 @@ type MockCore = {
 
 function createMockCore(
   initialAgents: Record<string, AbstractAgent> = {},
-  options: { runtimeUrl?: string } = {},
+  options: { runtimeUrl?: string; headers?: Record<string, string> } = {},
 ) {
   const subscribers = new Set<CopilotKitCoreSubscriber>();
   const stores = new Map<string, unknown>();
@@ -113,6 +117,7 @@ function createMockCore(
     agents: initialAgents,
     context: {},
     properties: {},
+    headers: options.headers ?? {},
     runtimeConnectionStatus: CopilotKitCoreRuntimeConnectionStatus.Connected,
     runtimeUrl: options.runtimeUrl,
     subscribe(subscriber: CopilotKitCoreSubscriber) {
@@ -127,9 +132,24 @@ function createMockCore(
     },
     registerThreadStore(agentId: string, store: unknown) {
       const previous = stores.get(agentId);
+      // Re-registering the same store is a no-op in the real registry, mirror
+      // that here so listeners don't see a phantom unregister/register pair.
+      if (previous === store) return;
       stores.set(agentId, store);
-      // Fire the registration event so subscribers (e.g. the inspector)
-      // hook up their per-store subscriptions, mirroring the real registry.
+      // Match production order from ThreadStoreRegistry.register: emit
+      // unregistered for the previous store FIRST (with the new store already
+      // installed in `stores`), then emit registered for the new store. This
+      // is the contract listeners rely on when cleaning up subscriptions
+      // tied to the prior store reference.
+      if (previous && previous !== store) {
+        subscribers.forEach((subscriber) =>
+          subscriber.onThreadStoreUnregistered?.({
+            copilotkit: core as unknown as CopilotKitCore,
+            agentId,
+            store: previous as never,
+          }),
+        );
+      }
       subscribers.forEach((subscriber) =>
         subscriber.onThreadStoreRegistered?.({
           copilotkit: core as unknown as CopilotKitCore,
@@ -140,18 +160,6 @@ function createMockCore(
           store: store as never,
         }),
       );
-      // If a previous store existed, the registry would also have unregistered
-      // it. Fire the unregister event with the prior store so the inspector's
-      // cleanup path is exercised against the real core contract.
-      if (previous && previous !== store) {
-        subscribers.forEach((subscriber) =>
-          subscriber.onThreadStoreUnregistered?.({
-            copilotkit: core as unknown as CopilotKitCore,
-            agentId,
-            store: previous as never,
-          }),
-        );
-      }
     },
     unregisterThreadStore(agentId: string) {
       const previous = stores.get(agentId);
@@ -188,6 +196,26 @@ function createMockCore(
           context: core.context as unknown as Readonly<
             Record<string, { value: string; description: string }>
           >,
+        }),
+      );
+    },
+    emitHeadersChanged(nextHeaders: Record<string, string>) {
+      core.headers = nextHeaders;
+      subscribers.forEach((subscriber) =>
+        subscriber.onHeadersChanged?.({
+          copilotkit: core as unknown as CopilotKitCore,
+          headers: core.headers as Readonly<Record<string, string>>,
+        }),
+      );
+    },
+    emitRuntimeConnectionStatusChanged(
+      nextStatus: CopilotKitCoreRuntimeConnectionStatus,
+    ) {
+      core.runtimeConnectionStatus = nextStatus;
+      subscribers.forEach((subscriber) =>
+        subscriber.onRuntimeConnectionStatusChanged?.({
+          copilotkit: core as unknown as CopilotKitCore,
+          status: nextStatus,
         }),
       );
     },
@@ -461,5 +489,113 @@ describe("WebInspectorElement", () => {
     controller.simulateSetState({ counter: 5 });
     await inspector.updateComplete;
     expect(internals.agentStates.get("counter")).toEqual({ counter: 5 });
+  });
+
+  it("propagates core.headers to owned thread stores on onHeadersChanged (CR R3 #2)", async () => {
+    // Reproduces the bug fixed in CPK-7193 review round 3:
+    //
+    //   ensureOwnedThreadStore() previously hardcoded headers: {} when it
+    //   created the owned store, and onHeadersChanged was not subscribed to.
+    //   That meant authenticated runtimes never saw their auth headers on
+    //   thread-list fetches. After the fix, header rotations push fresh
+    //   headers into every owned store via store.setContext().
+    const { agent } = createMockAgent("alpha");
+    const mockCore = createMockCore(
+      { alpha: agent },
+      {
+        runtimeUrl: "http://runtime.test",
+        headers: { Authorization: "Bearer initial-token" },
+      },
+    );
+    const inspector = createInspectorWithCore(mockCore.core);
+
+    mockCore.emitAgentsChanged();
+    await inspector.updateComplete;
+
+    const internals = getInternals(inspector);
+    const ownedStore = internals._ownedThreadStores.get("alpha") as
+      | { setContext: (ctx: unknown) => void }
+      | undefined;
+    expect(ownedStore).toBeDefined();
+
+    // Spy on the existing owned store's setContext, then rotate the headers.
+    // We assert the new headers are pushed through with the correct
+    // runtimeUrl/agentId envelope — the inspector reads them from core, so a
+    // hardcoded empty object would cause this assertion to fail.
+    const setContextSpy = vi.spyOn(
+      ownedStore as { setContext: (ctx: unknown) => void },
+      "setContext",
+    );
+
+    mockCore.emitHeadersChanged({ Authorization: "Bearer rotated-token" });
+
+    expect(setContextSpy).toHaveBeenCalledWith({
+      runtimeUrl: "http://runtime.test",
+      headers: { Authorization: "Bearer rotated-token" },
+      agentId: "alpha",
+    });
+  });
+
+  it("revalidates selectedThreadId when its agent's store is unregistered (CR R3 #5)", async () => {
+    // After an agent's thread store is unregistered, the inspector must drop
+    // any selectedThreadId that pointed into the removed list. Otherwise the
+    // details panel keeps fetching against a thread no list shows.
+    const { agent } = createMockAgent("alpha");
+    const mockCore = createMockCore(
+      { alpha: agent },
+      { runtimeUrl: "http://runtime.test" },
+    );
+    const inspector = createInspectorWithCore(mockCore.core);
+
+    mockCore.emitAgentsChanged();
+    await inspector.updateComplete;
+
+    const internals = getInternals(inspector);
+    // Plant a selected thread that the inspector "knows" about via the per-
+    // agent thread map. The thread store is the inspector's owned store, but
+    // for this regression we only care about the unregister revalidation
+    // pathway, not how the thread was discovered.
+    internals._threadsByAgent.set("alpha", [
+      { id: "thread-1", agentId: "alpha" },
+    ]);
+    internals._threads = [{ id: "thread-1", agentId: "alpha" }];
+    internals.selectedThreadId = "thread-1";
+
+    // Core unregisters the store. The inspector's onThreadStoreUnregistered
+    // handler must call autoSelectLatestThread, which clears
+    // selectedThreadId because _threads is now empty.
+    mockCore.core.unregisterThreadStore("alpha");
+    await inspector.updateComplete;
+
+    expect(internals.selectedThreadId).toBeNull();
+  });
+
+  it("backfills owned thread stores when runtimeUrl is set after agents register (CR R3 #10)", async () => {
+    // ensureOwnedThreadStore() early-returns when runtimeUrl is missing.
+    // Without backfill, an agent registered before runtimeUrl is set would
+    // never get an owned store. After the fix, the
+    // onRuntimeConnectionStatusChanged handler iterates core.agents and
+    // ensures any missing owned stores are created when the runtime becomes
+    // connected.
+    const { agent } = createMockAgent("alpha");
+    // Start with no runtimeUrl so ensureOwnedThreadStore() early-returns.
+    const mockCore = createMockCore({ alpha: agent });
+    const inspector = createInspectorWithCore(mockCore.core);
+
+    mockCore.emitAgentsChanged();
+    await inspector.updateComplete;
+
+    const internals = getInternals(inspector);
+    expect(internals._ownedThreadStores.has("alpha")).toBe(false);
+
+    // Now set the runtimeUrl and emit the connected status. The inspector
+    // should backfill the missing owned store for the registered agent.
+    mockCore.core.runtimeUrl = "http://runtime.test";
+    mockCore.emitRuntimeConnectionStatusChanged(
+      CopilotKitCoreRuntimeConnectionStatus.Connected,
+    );
+    await inspector.updateComplete;
+
+    expect(internals._ownedThreadStores.has("alpha")).toBe(true);
   });
 });

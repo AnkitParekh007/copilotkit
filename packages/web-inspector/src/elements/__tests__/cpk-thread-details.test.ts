@@ -141,7 +141,11 @@ describe("cpk-thread-details", () => {
     el.threadId = "t1";
     el.updated(new Map([["threadId", null]]));
     expect(mock.calls).toHaveLength(3);
-    const [msgs1, events1, state1] = mock.calls;
+    // noUncheckedIndexedAccess: explicit non-null after the length check
+    // above makes this safe and keeps the destructure type-clean.
+    const msgs1 = mock.calls[0]!;
+    const events1 = mock.calls[1]!;
+    const state1 = mock.calls[2]!;
     // Each tab has its own AbortController, so each call sees a distinct,
     // not-yet-aborted signal.
     expect(msgs1.signal?.aborted).toBe(false);
@@ -159,9 +163,9 @@ describe("cpk-thread-details", () => {
 
     // And three brand-new fetches should have been issued for t2.
     expect(mock.calls).toHaveLength(6);
-    expect(new URL(mock.calls[3].url).pathname).toBe("/threads/t2/messages");
-    expect(new URL(mock.calls[4].url).pathname).toBe("/threads/t2/events");
-    expect(new URL(mock.calls[5].url).pathname).toBe("/threads/t2/state");
+    expect(new URL(mock.calls[3]!.url).pathname).toBe("/threads/t2/messages");
+    expect(new URL(mock.calls[4]!.url).pathname).toBe("/threads/t2/events");
+    expect(new URL(mock.calls[5]!.url).pathname).toBe("/threads/t2/state");
   });
 
   it("disconnectedCallback aborts all in-flight fetches", () => {
@@ -169,7 +173,10 @@ describe("cpk-thread-details", () => {
     el.runtimeUrl = "http://runtime.test";
     el.threadId = "t1";
     el.updated(new Map([["threadId", null]]));
-    const [msgs, events, state] = mock.calls;
+    expect(mock.calls).toHaveLength(3);
+    const msgs = mock.calls[0]!;
+    const events = mock.calls[1]!;
+    const state = mock.calls[2]!;
 
     el.disconnectedCallback();
 
@@ -330,5 +337,89 @@ describe("cpk-thread-details", () => {
     const first = el._conversation[0] as { type: string; content: string };
     expect(first.type).toBe("user");
     expect(first.content).toBe("hello");
+  });
+
+  it("does not let an older fetch's resumed microtask clobber a newer thread's data (CR R3 #9)", async () => {
+    // Reproduces the race fixed in CPK-7193 review round 3: between
+    // `await fetch(...)` and `await res.json()`, a fast threadId switch
+    // aborts the original controller. Without the post-json aborted-check,
+    // the older fetch's resumed microtask still writes its parsed payload
+    // into _conversation/_fetchedEvents/_fetchedState, overwriting the
+    // newer thread's already-loaded data.
+    const el = makeEl();
+    el.runtimeUrl = "http://runtime.test";
+
+    // Kick off t1's fetches.
+    el.threadId = "t1";
+    el.updated(new Map([["threadId", null]]));
+    expect(mock.calls).toHaveLength(3);
+
+    // Capture t1's calls. We resolve t1's fetch BEFORE switching threadId,
+    // but we DON'T let the resulting microtask drain — that microtask is
+    // what carries the post-`await res.json()` write. The `init?.signal`
+    // wired by installFetchMock will still fire abort when threadId
+    // changes, so the await-aborted-check is the only thing that prevents
+    // the late write.
+    const t1Messages = mock.calls.find(
+      (c) => c.url === "http://runtime.test/threads/t1/messages",
+    )!;
+    const t1Events = mock.calls.find(
+      (c) => c.url === "http://runtime.test/threads/t1/events",
+    )!;
+    const t1State = mock.calls.find(
+      (c) => c.url === "http://runtime.test/threads/t1/state",
+    )!;
+
+    // Resolve t1's responses so `await res.json()` is queued as a
+    // microtask. Crucially, do NOT yield to the event loop yet — the
+    // microtasks are queued but won't run until we await later.
+    t1Messages.resolve(
+      jsonResponse({
+        messages: [{ id: "m1", role: "user", content: "FROM T1" }],
+      }),
+    );
+    t1Events.resolve(
+      jsonResponse({ events: [{ type: "T1_EVENT", timestamp: 1 }] }),
+    );
+    t1State.resolve(jsonResponse({ state: { from: "t1" } }));
+
+    // Now switch to t2. updated() aborts t1's controllers, then kicks off
+    // t2's fetches. Resolve t2's synchronously and drain to settle.
+    el.threadId = "t2";
+    el.updated(new Map([["threadId", "t1"]]));
+    expect(mock.calls).toHaveLength(6);
+    const t2Messages = mock.calls.find(
+      (c) => c.url === "http://runtime.test/threads/t2/messages",
+    )!;
+    const t2Events = mock.calls.find(
+      (c) => c.url === "http://runtime.test/threads/t2/events",
+    )!;
+    const t2State = mock.calls.find(
+      (c) => c.url === "http://runtime.test/threads/t2/state",
+    )!;
+    t2Messages.resolve(
+      jsonResponse({
+        messages: [{ id: "m2", role: "user", content: "FROM T2" }],
+      }),
+    );
+    t2Events.resolve(
+      jsonResponse({ events: [{ type: "T2_EVENT", timestamp: 2 }] }),
+    );
+    t2State.resolve(jsonResponse({ state: { from: "t2" } }));
+
+    // Drain microtasks. Both t1's and t2's queued `await res.json()`
+    // microtasks resume now. With the fix, t1's resumed microtasks see
+    // controller.signal.aborted === true and bail BEFORE writing.
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+
+    // Final state should reflect t2's data, not t1's stale write.
+    const conv = el._conversation as Array<{ content: string }>;
+    expect(conv).toHaveLength(1);
+    expect(conv[0]!.content).toBe("FROM T2");
+    const events = el._fetchedEvents as Array<{ type: string }>;
+    expect(events).toHaveLength(1);
+    expect(events[0]!.type).toBe("T2_EVENT");
+    expect(el._fetchedState).toEqual({ from: "t2" });
   });
 });
