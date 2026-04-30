@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Plus_Jakarta_Sans, Spline_Sans_Mono } from "next/font/google";
+import { AnalyticsClient } from "@/components/analytics-client";
 import { BrandNav } from "@/components/brand-nav";
 import { FrameworkProvider } from "@/components/framework-provider";
 import { getIntegrations } from "@/lib/registry";
@@ -83,6 +84,7 @@ export default function RootLayout({
       className={`${plusJakartaSans.variable} ${splineSansMono.variable}`}
     >
       <body className="min-h-screen">
+        <AnalyticsClient />
         <FrameworkProvider knownFrameworks={knownFrameworks}>
           <BrandNav />
           <main>{children}</main>
