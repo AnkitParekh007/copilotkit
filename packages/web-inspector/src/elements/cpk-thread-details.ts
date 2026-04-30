@@ -630,6 +630,17 @@ class CpkThreadDetails extends LitElement {
       this._tab = "conversation";
       this._expandedTools = new Set();
       this._expandedMessages = new Set();
+      // Clear previous-thread fetched data BEFORE kicking off new fetches so
+      // the previous thread's events/state cannot flash on screen during the
+      // gap between fetch start and response. Errors are also reset so a
+      // stale error does not outlive the previous thread.
+      this._fetchedEvents = null;
+      this._fetchedState = null;
+      this._eventsError = null;
+      this._stateError = null;
+      this._messagesError = null;
+      this._eventsNotAvailable = false;
+      this._stateNotAvailable = false;
       // Cancel any in-flight per-tab fetches for the previous thread. Each tab
       // has its own controller so an aborted /messages call doesn't also
       // cancel an unrelated /events or /state call.
@@ -647,9 +658,6 @@ class CpkThreadDetails extends LitElement {
       if (this.threadId) {
         void this.fetchEvents(this.threadId);
         void this.fetchState(this.threadId);
-      } else {
-        this._fetchedEvents = null;
-        this._fetchedState = null;
       }
     } else if (changed.has("conversationOverride")) {
       const override = this.conversationOverride;
@@ -693,27 +701,54 @@ class CpkThreadDetails extends LitElement {
     if (tab === "events") this._eventsNotAvailable = false;
     if (tab === "state") this._stateNotAvailable = false;
 
+    // Abort any in-flight controller for THIS tab BEFORE the early-return
+    // path. Otherwise toggling runtimeUrl from set → unset would leak the
+    // previous fetch, leaving stale data in flight against an unwanted URL.
+    // Other tabs are unaffected.
+    if (tab === "messages") {
+      this._messagesAbort?.abort();
+      this._messagesAbort = null;
+    } else if (tab === "events") {
+      this._eventsAbort?.abort();
+      this._eventsAbort = null;
+    } else {
+      this._stateAbort?.abort();
+      this._stateAbort = null;
+    }
+
     if (!this.runtimeUrl) {
-      if (tab === "messages") this._conversation = [];
-      else if (tab === "events") this._fetchedEvents = null;
-      else this._fetchedState = null;
+      // Loading flags are not set on this early-return path, so there is
+      // nothing to reset — but make the symmetry explicit by also clearing
+      // the per-tab error so a stale error from a previous run does not
+      // outlive runtimeUrl going away.
+      if (tab === "messages") {
+        this._conversation = [];
+        this._messagesError = null;
+        this._loadingMessages = false;
+      } else if (tab === "events") {
+        this._fetchedEvents = null;
+        this._eventsError = null;
+        this._loadingEvents = false;
+      } else {
+        this._fetchedState = null;
+        this._stateError = null;
+        this._loadingState = false;
+      }
       return;
     }
 
-    // Replace any in-flight controller for THIS tab. Other tabs are unaffected.
+    // Install the new controller for THIS tab and flip loading on. The
+    // previous controller (if any) was already aborted above.
     const controller = new AbortController();
     if (tab === "messages") {
-      this._messagesAbort?.abort();
       this._messagesAbort = controller;
       this._loadingMessages = true;
       this._messagesError = null;
     } else if (tab === "events") {
-      this._eventsAbort?.abort();
       this._eventsAbort = controller;
       this._loadingEvents = true;
       this._eventsError = null;
     } else {
-      this._stateAbort?.abort();
       this._stateAbort = controller;
       this._loadingState = true;
       this._stateError = null;
@@ -747,7 +782,10 @@ class CpkThreadDetails extends LitElement {
       } else if (tab === "events") {
         this._fetchedEvents = parsed as unknown as ApiAgentEvent[];
       } else {
-        this._fetchedState = parsed as unknown as Record<string, unknown> | null;
+        this._fetchedState = parsed as unknown as Record<
+          string,
+          unknown
+        > | null;
       }
     } catch (err) {
       if (err instanceof Error && err.name === "AbortError") return;
@@ -771,7 +809,10 @@ class CpkThreadDetails extends LitElement {
         this._fetchedEvents = fallback as unknown as ApiAgentEvent[];
       } else {
         this._stateError = message;
-        this._fetchedState = fallback as unknown as Record<string, unknown> | null;
+        this._fetchedState = fallback as unknown as Record<
+          string,
+          unknown
+        > | null;
       }
     } finally {
       // Don't toggle the loading flag if we were aborted — a newer fetch is
