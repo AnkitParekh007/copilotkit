@@ -5,10 +5,15 @@
  * - With `basePath`: strict prefix strip → match remainder
  * - Without `basePath`: suffix matching on known patterns
  *
+ * The set of known routes (URL pattern + HTTP method + dispatch handler) is
+ * declared in `routes.ts`. This module is a thin path-stripper that delegates
+ * the actual pattern matching to that table.
+ *
  * Single-route mode: delegates to `parseMethodCall` for JSON envelope dispatch.
  */
 
 import type { RouteInfo } from "./hooks";
+import { matchSegmentsAgainstRoutes } from "./routes";
 
 /**
  * Match a request URL against known CopilotKit route patterns.
@@ -47,157 +52,7 @@ export function matchRoute(
     remainder = pathname;
   }
 
-  return matchSegments(remainder);
-}
-
-function safeDecodeURIComponent(value: string): string | null {
-  try {
-    return decodeURIComponent(value);
-  } catch {
-    return null;
-  }
-}
-
-function matchSegments(path: string): RouteInfo | null {
-  const segments = path.split("/").filter(Boolean);
-  const len = segments.length;
-
-  // Try suffix matching — scan from the end for known patterns
-
-  // /info (1 segment)
-  if (len >= 1 && segments[len - 1] === "info") {
-    return { method: "info" };
-  }
-
-  // /transcribe (1 segment)
-  if (len >= 1 && segments[len - 1] === "transcribe") {
-    return { method: "transcribe" };
-  }
-
-  // /cpk-debug-events (1 segment)
-  // Reserved route name: the `cpk-` prefix makes collision with a
-  // user-named agent essentially impossible (the router only treats
-  // `agent/:agentId/...` patterns as agent lookups, so a bare
-  // `cpk-debug-events` segment would never fall through to one —
-  // the prefix is the real guard, not this branch's position).
-  // Handler returns 404 in production.
-  if (len >= 1 && segments[len - 1] === "cpk-debug-events") {
-    return { method: "cpk-debug-events" };
-  }
-
-  // /agent/:agentId/run (3 segments)
-  if (
-    len >= 3 &&
-    segments[len - 3] === "agent" &&
-    segments[len - 1] === "run"
-  ) {
-    const agentId = safeDecodeURIComponent(segments[len - 2]!);
-    if (!agentId) return null;
-    return { method: "agent/run", agentId };
-  }
-
-  // /agent/:agentId/connect (3 segments)
-  if (
-    len >= 3 &&
-    segments[len - 3] === "agent" &&
-    segments[len - 1] === "connect"
-  ) {
-    const agentId = safeDecodeURIComponent(segments[len - 2]!);
-    if (!agentId) return null;
-    return { method: "agent/connect", agentId };
-  }
-
-  // /agent/:agentId/stop/:threadId (4 segments)
-  if (
-    len >= 4 &&
-    segments[len - 4] === "agent" &&
-    segments[len - 2] === "stop"
-  ) {
-    const agentId = safeDecodeURIComponent(segments[len - 3]!);
-    const threadId = safeDecodeURIComponent(segments[len - 1]!);
-    if (!agentId || !threadId) return null;
-    return { method: "agent/stop", agentId, threadId };
-  }
-
-  // /threads/subscribe (2 segments)
-  if (
-    len >= 2 &&
-    segments[len - 2] === "threads" &&
-    segments[len - 1] === "subscribe"
-  ) {
-    return { method: "threads/subscribe" };
-  }
-
-  // /threads/:threadId/messages (3 segments)
-  if (
-    len >= 3 &&
-    segments[len - 3] === "threads" &&
-    segments[len - 1] === "messages"
-  ) {
-    const threadId = safeDecodeURIComponent(segments[len - 2]!);
-    if (!threadId) return null;
-    return { method: "threads/messages", threadId };
-  }
-
-  // /threads/:threadId/events (3 segments)
-  if (
-    len >= 3 &&
-    segments[len - 3] === "threads" &&
-    segments[len - 1] === "events"
-  ) {
-    const threadId = safeDecodeURIComponent(segments[len - 2]!);
-    if (!threadId) return null;
-    return { method: "threads/events", threadId };
-  }
-
-  // /threads/:threadId/state (3 segments)
-  if (
-    len >= 3 &&
-    segments[len - 3] === "threads" &&
-    segments[len - 1] === "state"
-  ) {
-    const threadId = safeDecodeURIComponent(segments[len - 2]!);
-    if (!threadId) return null;
-    return { method: "threads/state", threadId };
-  }
-
-  // /threads/:threadId/archive (3 segments)
-  if (
-    len >= 3 &&
-    segments[len - 3] === "threads" &&
-    segments[len - 1] === "archive"
-  ) {
-    const threadId = safeDecodeURIComponent(segments[len - 2]!);
-    if (!threadId) return null;
-    return { method: "threads/archive", threadId };
-  }
-
-  // /threads/clear (2 segments) — wipe in-memory thread history
-  if (
-    len >= 2 &&
-    segments[len - 2] === "threads" &&
-    segments[len - 1] === "clear"
-  ) {
-    return { method: "threads/clear" };
-  }
-
-  // /threads/:threadId (2 segments) — update or delete
-  if (
-    len >= 2 &&
-    segments[len - 2] === "threads" &&
-    segments[len - 1] !== "subscribe" &&
-    segments[len - 1] !== "clear"
-  ) {
-    const threadId = safeDecodeURIComponent(segments[len - 1]!);
-    if (!threadId) return null;
-    // Disambiguated by HTTP method in the handler
-    return { method: "threads/update", threadId };
-  }
-
-  // /threads (1 segment) — list
-  if (len >= 1 && segments[len - 1] === "threads") {
-    return { method: "threads/list" };
-  }
-
-  return null;
+  const segments = remainder.split("/").filter(Boolean);
+  const matched = matchSegmentsAgainstRoutes(segments);
+  return matched ? matched.route : null;
 }

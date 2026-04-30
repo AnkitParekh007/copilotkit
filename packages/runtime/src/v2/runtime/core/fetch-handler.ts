@@ -37,27 +37,11 @@ import {
 import type { CopilotCorsConfig } from "./fetch-cors";
 import { handleCors, addCorsHeaders } from "./fetch-cors";
 import { matchRoute } from "./fetch-router";
+import { findRouteEntry, type HttpMethod, type RouteEntry } from "./routes";
 import {
   callBeforeRequestMiddleware,
   callAfterRequestMiddleware,
 } from "./middleware";
-import { handleRunAgent } from "../handlers/handle-run";
-import { handleConnectAgent } from "../handlers/handle-connect";
-import { handleStopAgent } from "../handlers/handle-stop";
-import { handleGetRuntimeInfo } from "../handlers/get-runtime-info";
-import { handleTranscribe } from "../handlers/handle-transcribe";
-import { handleDebugEvents } from "../handlers/handle-debug-events";
-import {
-  handleClearThreads,
-  handleListThreads,
-  handleSubscribeToThreads,
-  handleUpdateThread,
-  handleArchiveThread,
-  handleDeleteThread,
-  handleGetThreadMessages,
-  handleGetThreadEvents,
-  handleGetThreadState,
-} from "../handlers/handle-threads";
 import {
   parseMethodCall,
   createJsonRequest,
@@ -185,7 +169,13 @@ export function createCopilotRuntimeHandler(
         ) {
           request = createJsonRequest(request, methodCall.body);
         }
-        response = await dispatchRoute(runtime, request, route);
+        const entry = findRouteEntry(route.method);
+        if (!entry) {
+          // Single-route mode only exposes a subset of methods, all of which
+          // exist in the table. This branch is defensive only.
+          throw jsonResponse({ error: "Not found" }, 404);
+        }
+        response = await entry.handler({ runtime, request, route });
       } else {
         // Multi-route: match URL pattern
         const matched = matchRoute(path, basePath);
@@ -193,8 +183,16 @@ export function createCopilotRuntimeHandler(
           throw jsonResponse({ error: "Not found" }, 404);
         }
 
+        const entry = findRouteEntry(matched.method);
+        if (!entry) {
+          // Defensive: matched a method the table doesn't list. The router
+          // and table read from the same source, so this is unreachable
+          // unless the table becomes inconsistent.
+          throw jsonResponse({ error: "Not found" }, 404);
+        }
+
         // Validate HTTP method
-        const methodError = validateHttpMethod(request.method, matched);
+        const methodError = validateHttpMethod(request.method, entry);
         if (methodError) {
           route = matched;
           throw methodError;
@@ -211,7 +209,7 @@ export function createCopilotRuntimeHandler(
         });
 
         // 6. Handler dispatch
-        response = await dispatchRoute(runtime, request, route);
+        response = await entry.handler({ runtime, request, route });
       }
 
       // 7. onResponse hook
@@ -289,81 +287,8 @@ export function createCopilotRuntimeHandler(
 }
 
 /* ------------------------------------------------------------------------------------------------
- * Route dispatch
+ * Single-route resolution
  * --------------------------------------------------------------------------------------------- */
-
-function dispatchRoute(
-  runtime: CopilotRuntimeLike,
-  request: Request,
-  route: RouteInfo,
-): Promise<Response> {
-  switch (route.method) {
-    case "agent/run":
-      return handleRunAgent({
-        runtime,
-        request,
-        agentId: route.agentId,
-      });
-    case "agent/connect":
-      return handleConnectAgent({
-        runtime,
-        request,
-        agentId: route.agentId,
-      });
-    case "agent/stop":
-      return handleStopAgent({
-        runtime,
-        request,
-        agentId: route.agentId,
-        threadId: route.threadId,
-      });
-    case "info":
-      return handleGetRuntimeInfo({ runtime, request });
-    case "transcribe":
-      return handleTranscribe({ runtime, request });
-    case "threads/clear":
-      return Promise.resolve(handleClearThreads({ runtime, request }));
-    case "threads/list":
-      return handleListThreads({ runtime, request });
-    case "threads/subscribe":
-      return handleSubscribeToThreads({ runtime, request });
-    case "threads/update":
-      if (request.method.toUpperCase() === "DELETE") {
-        return handleDeleteThread({
-          runtime,
-          request,
-          threadId: route.threadId,
-        });
-      }
-      return handleUpdateThread({ runtime, request, threadId: route.threadId });
-    case "threads/archive":
-      return handleArchiveThread({
-        runtime,
-        request,
-        threadId: route.threadId,
-      });
-    case "threads/messages":
-      return handleGetThreadMessages({
-        runtime,
-        request,
-        threadId: route.threadId,
-      });
-    case "threads/events":
-      return handleGetThreadEvents({
-        runtime,
-        request,
-        threadId: route.threadId,
-      });
-    case "threads/state":
-      return handleGetThreadState({
-        runtime,
-        request,
-        threadId: route.threadId,
-      });
-    case "cpk-debug-events":
-      return Promise.resolve(handleDebugEvents({ runtime, request }));
-  }
-}
 
 interface SingleRouteResolution {
   route: RouteInfo;
@@ -429,34 +354,13 @@ async function resolveSingleRoute(
 
 function validateHttpMethod(
   httpMethod: string,
-  route: RouteInfo,
+  entry: RouteEntry,
 ): Response | null {
-  const method = httpMethod.toUpperCase();
-
-  switch (route.method) {
-    case "info":
-    case "threads/list":
-    case "threads/messages":
-    case "threads/events":
-    case "threads/state":
-    case "cpk-debug-events":
-      if (method === "GET") return null;
-      return jsonResponse({ error: "Method not allowed" }, 405, {
-        Allow: "GET",
-      });
-
-    case "threads/update":
-      if (method === "PATCH" || method === "DELETE") return null;
-      return jsonResponse({ error: "Method not allowed" }, 405, {
-        Allow: "PATCH, DELETE",
-      });
-
-    default:
-      if (method === "POST") return null;
-      return jsonResponse({ error: "Method not allowed" }, 405, {
-        Allow: "POST",
-      });
-  }
+  const method = httpMethod.toUpperCase() as HttpMethod;
+  if (entry.methods.includes(method)) return null;
+  return jsonResponse({ error: "Method not allowed" }, 405, {
+    Allow: entry.methods.join(", "),
+  });
 }
 
 /* ------------------------------------------------------------------------------------------------
