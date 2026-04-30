@@ -98,6 +98,21 @@ function safeDecodeURIComponent(value: string): string | null {
   }
 }
 
+/**
+ * Final-segment names that the bare `/threads/:threadId` (`threads/update`)
+ * matcher MUST NOT absorb. These collide with two- and three-segment routes
+ * declared elsewhere in this table and would otherwise be silently
+ * misinterpreted as a threadId.
+ */
+const RESERVED_THREAD_SUBROUTES = new Set([
+  "subscribe",
+  "clear",
+  "messages",
+  "events",
+  "state",
+  "archive",
+]);
+
 /* ------------------------------------------------------------------------------------------------
  * Route table
  *
@@ -108,12 +123,19 @@ function safeDecodeURIComponent(value: string): string | null {
 
 export const ALL_ROUTES: readonly RouteEntry[] = [
   // /info  (GET)
+  // Suffix matcher: any path ending in `/info` resolves here. The exclusion
+  // for `len >= 2 && segments[len-2] === "threads"` is the collision guard
+  // — without it, `PATCH /threads/info` would resolve to this matcher (then
+  // 405 against GET-only) instead of falling through to `threads/update`
+  // with `threadId="info"`. Same exclusion is applied to `/transcribe` and
+  // `/cpk-debug-events`.
   {
     id: "info",
     methods: ["GET"],
     match: (segments) => {
       const len = segments.length;
       if (len >= 1 && segments[len - 1] === "info") {
+        if (len >= 2 && segments[len - 2] === "threads") return null;
         return { method: "info" };
       }
       return null;
@@ -123,12 +145,14 @@ export const ALL_ROUTES: readonly RouteEntry[] = [
   },
 
   // /transcribe  (POST)
+  // Same `threads/<keyword>` collision guard as `/info`.
   {
     id: "transcribe",
     methods: ["POST"],
     match: (segments) => {
       const len = segments.length;
       if (len >= 1 && segments[len - 1] === "transcribe") {
+        if (len >= 2 && segments[len - 2] === "threads") return null;
         return { method: "transcribe" };
       }
       return null;
@@ -141,13 +165,15 @@ export const ALL_ROUTES: readonly RouteEntry[] = [
   // agent essentially impossible (the router only treats `agent/:agentId/...`
   // patterns as agent lookups, so a bare `cpk-debug-events` segment would
   // never fall through to one — the prefix is the real guard, not this
-  // branch's position). Handler returns 404 in production.
+  // branch's position). The `threads/<keyword>` collision guard mirrors
+  // `/info` and `/transcribe`. Handler returns 404 in production.
   {
     id: "cpk-debug-events",
     methods: ["GET"],
     match: (segments) => {
       const len = segments.length;
       if (len >= 1 && segments[len - 1] === "cpk-debug-events") {
+        if (len >= 2 && segments[len - 2] === "threads") return null;
         return { method: "cpk-debug-events" };
       }
       return null;
@@ -380,18 +406,22 @@ export const ALL_ROUTES: readonly RouteEntry[] = [
 
   // /threads/:threadId  (PATCH | DELETE)  — bare-thread update/delete.
   // The handler dispatches by HTTP method.
+  //
+  // Reserved subroute names that would otherwise collide with this 2-segment
+  // pattern: the 2-segment routes (`subscribe`, `clear`) and the trailing
+  // segments of 3-segment routes (`messages`, `events`, `state`, `archive`).
+  // Without this exclusion, e.g. `PATCH /threads/messages` would resolve to
+  // `{ method: "threads/update", threadId: "messages" }` instead of returning
+  // null and surfacing a 404/405.
   {
     id: "threads/update",
     methods: ["PATCH", "DELETE"],
     match: (segments) => {
       const len = segments.length;
-      if (
-        len >= 2 &&
-        segments[len - 2] === "threads" &&
-        segments[len - 1] !== "subscribe" &&
-        segments[len - 1] !== "clear"
-      ) {
-        const threadId = safeDecodeURIComponent(segments[len - 1]!);
+      if (len >= 2 && segments[len - 2] === "threads") {
+        const last = segments[len - 1]!;
+        if (RESERVED_THREAD_SUBROUTES.has(last)) return null;
+        const threadId = safeDecodeURIComponent(last);
         if (!threadId) return null;
         return { method: "threads/update", threadId };
       }

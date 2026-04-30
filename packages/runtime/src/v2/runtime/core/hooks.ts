@@ -70,8 +70,15 @@ export interface HandlerHookContext extends HookContext {
 export interface ResponseHookContext extends HookContext {
   /** The Response produced by the handler. */
   response: Response;
-  /** The resolved route information. */
-  route: RouteInfo;
+  /**
+   * The resolved route information.
+   *
+   * Null when the response is being produced for a request that never
+   * resolved to a route (e.g. a 404 for an unknown path, or a malformed
+   * single-route body that failed parsing). Hooks that branch on
+   * `route?.method` won't fire for unrelated 404s in that case.
+   */
+  route: RouteInfo | null;
 }
 
 export interface ErrorHookContext extends HookContext {

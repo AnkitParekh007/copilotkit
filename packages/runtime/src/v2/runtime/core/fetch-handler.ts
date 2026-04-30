@@ -114,7 +114,7 @@ export function createCopilotRuntimeHandler(
     // Base hook context (route not yet known)
     const baseCtx: HookContext = { request, path, runtime };
 
-    let route: RouteInfo | undefined;
+    let route: RouteInfo | null = null;
 
     try {
       // 1. CORS preflight
@@ -247,19 +247,25 @@ export function createCopilotRuntimeHandler(
           response: error,
           path,
           runtime,
-          route: route ?? { method: "info" },
+          // `route` is null when the request never resolved to a route
+          // (404, malformed body, etc.) — hooks branching on
+          // `route?.method === "info"` would otherwise fire spuriously.
+          route,
         });
         return maybeAddCors(finalResponse, corsConfig, requestOrigin);
       }
 
-      // Run onError hook — wrapped so a throwing hook doesn't escape
+      // Run onError hook — wrapped so a throwing hook doesn't escape.
+      // ErrorHookContext.route is optional (`undefined` when routing
+      // hadn't yet succeeded), so coerce null → undefined to keep that
+      // contract intact.
       try {
         const errorResponse = await runOnError(hooks, {
           request,
           error,
           path,
           runtime,
-          route,
+          route: route ?? undefined,
         });
 
         if (errorResponse) {
@@ -314,6 +320,13 @@ async function resolveSingleRoute(
     throw jsonResponse({ error: "Method not allowed" }, 405, { Allow: "POST" });
   }
 
+  // Single-route mode is contractually a single POST endpoint with a JSON
+  // envelope; the per-route HTTP-method validation that applies in
+  // multi-route mode (e.g. info=GET, transcribe=POST) is intentionally NOT
+  // applied here. All envelope methods — including ones whose multi-route
+  // counterparts are GET — are dispatched under POST. The route table's
+  // `methods` field is therefore only consulted in the multi-route branch.
+
   const methodCall = await parseMethodCall(request);
 
   let route: RouteInfo;
@@ -343,6 +356,16 @@ async function resolveSingleRoute(
     case "transcribe":
       route = { method: "transcribe" };
       break;
+    default: {
+      // Exhaustiveness guard: a future method added to the
+      // single-route accepted set without a case here would otherwise
+      // fall through and surface as a misleading 500 deeper in the
+      // pipeline. Compile error if a new variant is added; runtime 400
+      // if the body slips through with an unsupported method.
+      const _exhaustive: never = methodCall.method;
+      void _exhaustive;
+      throw jsonResponse({ error: "Unsupported method" }, 400);
+    }
   }
 
   return { route, methodCall };

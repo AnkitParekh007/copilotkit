@@ -127,28 +127,26 @@ describe("fetch-router", () => {
       it("does not match the events route for /threads//events (empty threadId segment)", () => {
         // The empty segment is filtered out by split("/").filter(Boolean), so
         // the path collapses to /threads/events — only 2 segments. That fails
-        // the 3-segment events pattern but does match the 2-segment
-        // /threads/:threadId update pattern with threadId="events". The
-        // method-validation layer in fetch-handler.ts would then reject a GET
-        // request because "threads/update" only accepts PATCH/DELETE. The
-        // router-level invariant we care about here is that the events
-        // handler is NOT selected for this malformed URL.
+        // the 3-segment events pattern; with the reserved-subroute exclusion
+        // on `threads/update`, this also does NOT match `threads/update`
+        // (the `events` segment is reserved). So the router returns null
+        // and the malformed URL surfaces as a 404 at the handler layer.
         const result = matchRoute(
           "/api/copilotkit/threads//events",
           basePath,
         );
-        expect(result?.method).not.toBe("threads/events");
+        expect(result).toBeNull();
       });
 
       it("does not match the events route for /threads/foo/events/extra (extra trailing segment)", () => {
         // Suffix matching only inspects the trailing segments. /…/events/extra
-        // ends in `extra`, not `events`, so the events pattern cannot match
-        // and we expect either a different match or null — never threads/events.
+        // ends in `extra`, not `events`, so the events pattern cannot match.
+        // It also doesn't match any other route — assert null directly.
         const result = matchRoute(
           "/api/copilotkit/threads/foo/events/extra",
           basePath,
         );
-        expect(result?.method).not.toBe("threads/events");
+        expect(result).toBeNull();
       });
     });
 
@@ -188,14 +186,13 @@ describe("fetch-router", () => {
 
       it("does not match the state route for /threads//state (empty threadId segment)", () => {
         // See the events parallel above: the empty segment is filtered out
-        // before pattern matching, so this falls back to the
-        // /threads/:threadId update pattern. We assert only that the state
-        // handler is NOT selected for the malformed URL.
+        // before pattern matching. With `state` reserved on `threads/update`,
+        // this returns null — no fallback match.
         const result = matchRoute(
           "/api/copilotkit/threads//state",
           basePath,
         );
-        expect(result?.method).not.toBe("threads/state");
+        expect(result).toBeNull();
       });
 
       it("does not match the state route for /threads/foo/state/extra (extra trailing segment)", () => {
@@ -203,7 +200,7 @@ describe("fetch-router", () => {
           "/api/copilotkit/threads/foo/state/extra",
           basePath,
         );
-        expect(result?.method).not.toBe("threads/state");
+        expect(result).toBeNull();
       });
     });
 
@@ -353,5 +350,66 @@ describe("fetch-router", () => {
       const result = matchRoute("/api/cpk-debug-events", "/api");
       expect(result).toEqual({ method: "cpk-debug-events" });
     });
+  });
+
+  // Reserved-name collision regressions. The bare-thread `threads/update`
+  // matcher must NOT swallow paths whose final segment is a reserved
+  // subroute name, and the singleton matchers (info/transcribe/cpk-debug-
+  // events) must not absorb paths whose final segment happens to equal
+  // their keyword when those paths are not actually targeting them.
+  describe("reserved-name collisions", () => {
+    const basePath = "/api/copilotkit";
+
+    it("routes PATCH /threads/info to threads/update with threadId=info (info matcher does not absorb)", () => {
+      const result = matchRoute("/api/copilotkit/threads/info", basePath);
+      expect(result).toEqual({ method: "threads/update", threadId: "info" });
+    });
+
+    it("routes PATCH /threads/transcribe to threads/update with threadId=transcribe", () => {
+      const result = matchRoute(
+        "/api/copilotkit/threads/transcribe",
+        basePath,
+      );
+      expect(result).toEqual({
+        method: "threads/update",
+        threadId: "transcribe",
+      });
+    });
+
+    it("routes PATCH /threads/cpk-debug-events to threads/update with threadId=cpk-debug-events", () => {
+      const result = matchRoute(
+        "/api/copilotkit/threads/cpk-debug-events",
+        basePath,
+      );
+      expect(result).toEqual({
+        method: "threads/update",
+        threadId: "cpk-debug-events",
+      });
+    });
+
+    it.each(["messages", "events", "state", "archive"])(
+      "PATCH /threads/%s returns null (reserved 3-segment subroute name not absorbed by threads/update)",
+      (reserved) => {
+        const result = matchRoute(
+          `/api/copilotkit/threads/${reserved}`,
+          basePath,
+        );
+        expect(result).toBeNull();
+      },
+    );
+
+    it.each(["subscribe", "clear"])(
+      "PATCH /threads/%s does NOT resolve to threads/update (resolves to its dedicated route or returns null)",
+      (reserved) => {
+        const result = matchRoute(
+          `/api/copilotkit/threads/${reserved}`,
+          basePath,
+        );
+        // These resolve to their own dedicated 2-segment routes
+        // (`threads/subscribe`, `threads/clear`); the only invariant we care
+        // about here is that they do NOT come back as `threads/update`.
+        expect(result?.method).not.toBe("threads/update");
+      },
+    );
   });
 });
