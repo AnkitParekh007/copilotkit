@@ -379,8 +379,19 @@ export class CopilotKitCore {
           }
         });
 
-        // Unregister thread stores for agents that are no longer present
-        const currentAgentIds = new Set(Object.keys(agents));
+        // Unregister thread stores for agents that are no longer present.
+        // The thread store registry is keyed by the `agentId` passed to
+        // registerThreadStore (which is `agent.agentId`, not necessarily the
+        // registry key). Iterate `Object.values(agents).map(a => a.agentId)`
+        // so registrations made under an alias (key ≠ agentId) still match
+        // and aren't spuriously unregistered.
+        const currentAgentIds = new Set(
+          Object.values(agents)
+            .map((a) => a.agentId)
+            .filter(
+              (id): id is string => typeof id === "string" && id.length > 0,
+            ),
+        );
         for (const agentId of Object.keys(this.threadStoreRegistry.getAll())) {
           if (!currentAgentIds.has(agentId)) {
             this.threadStoreRegistry.unregister(agentId);

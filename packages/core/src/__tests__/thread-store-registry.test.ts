@@ -1,7 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { ThreadStoreRegistry } from "../core/thread-store-registry";
 import { CopilotKitCore } from "../core/core";
-import type { CopilotKitCoreSubscriber } from "../core/core";
+import type {
+  CopilotKitCoreSubscriber,
+  CopilotKitCoreFriendsAccess,
+} from "../core/core";
 import type { ɵThreadStore } from "../threads";
 
 // Minimal mock of CopilotKitCore that supports subscribing and notification
@@ -297,5 +300,52 @@ describe("ThreadStoreRegistry", () => {
     expect(onUnregistered).toHaveBeenCalledWith(
       expect.objectContaining({ agentId: "agent-going-away", store }),
     );
+  });
+
+  it("auto-unregister loop matches by agent.agentId, not by registry alias key (CR R4 #3)", async () => {
+    // The thread store registry is keyed by the `agentId` passed to
+    // registerThreadStore — which is `agent.agentId`, not necessarily the
+    // registration alias used in setAgents__unsafe_dev_only. This test pins
+    // the loop to use `agent.agentId` rather than `Object.keys(agents)` so
+    // a registered store under "alpha" is preserved when the agents map
+    // arrives under an alias whose KEY is "alpha-alias" but whose `agentId`
+    // is "alpha".
+    //
+    // The path is observable through CopilotKitCore's friends-access
+    // notification surface: emit a synthetic onAgentsChanged with key !=
+    // agentId and assert the registered store under "alpha" is not dropped.
+    const ck = new CopilotKitCore({});
+
+    // Register a thread store under the agent's agentId.
+    const store = makeStore("alpha");
+    ck.registerThreadStore("alpha", store);
+    expect(ck.getThreadStore("alpha")).toBe(store);
+
+    // Synthesize an onAgentsChanged where the registration KEY ("alpha-alias")
+    // differs from the agent's agentId ("alpha"). The internal subscriber's
+    // auto-unregister loop must use agent.agentId — under the old
+    // Object.keys(agents) implementation, this would erroneously unregister
+    // the "alpha" store.
+    const aliasedAgent = { agentId: "alpha" } as unknown as Parameters<
+      NonNullable<CopilotKitCoreSubscriber["onAgentsChanged"]>
+    >[0]["agents"][string];
+    await (
+      ck as unknown as CopilotKitCoreFriendsAccess
+    ).notifySubscribers((subscriber) => {
+      subscriber.onAgentsChanged?.({
+        copilotkit: ck,
+        agents: { "alpha-alias": aliasedAgent },
+      });
+    }, "test:onAgentsChanged");
+
+    // Flush microtasks the internal subscriber may chain through.
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // The store must STILL be registered: agent.agentId="alpha" is present
+    // in the synthetic agents map, even though the registration KEY is
+    // "alpha-alias".
+    expect(ck.getThreadStore("alpha")).toBe(store);
   });
 });
