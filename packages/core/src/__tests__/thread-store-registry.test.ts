@@ -197,7 +197,16 @@ describe("ThreadStoreRegistry", () => {
     const unregisteredPayloadStores: Array<ɵThreadStore> = [];
 
     const subscriber: CopilotKitCoreSubscriber = {
-      onThreadStoreUnregistered: ({ store }) => {
+      // Annotate the param explicitly so the destructure is type-checked
+      // under noUncheckedIndexedAccess + strict, even when the surrounding
+      // CopilotKitCoreSubscriber inference is brittle (e.g. when
+      // contextual-typing breaks across optional properties).
+      onThreadStoreUnregistered: (event: {
+        copilotkit: CopilotKitCore;
+        agentId: string;
+        store: ɵThreadStore;
+      }) => {
+        const { store } = event;
         observedDuringUnregistered.push(registry.get("agent-1"));
         unregisteredPayloadStores.push(store);
       },
