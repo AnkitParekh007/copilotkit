@@ -38,6 +38,7 @@ export function ChatScreen() {
   const insets = useSafeAreaInsets();
   const [inputText, setInputText] = useState("");
   const [threadId, setThreadId] = useState(generateThreadId);
+  const [isDark, setIsDark] = useState(false);
   const flatListRef = useRef<FlatList>(null);
 
   const { copilotkit } = useCopilotKit();
@@ -45,6 +46,21 @@ export function ChatScreen() {
 
   const messages = agent?.messages ?? [];
   const isLoading = agent?.isRunning ?? false;
+
+  const theme = isDark ? darkColors : lightColors;
+
+  // ── Frontend Tool: Toggle Theme ────────────────────────────────────────
+  useFrontendTool(
+    {
+      name: "toggleTheme",
+      description: "Frontend tool for toggling the theme of the app.",
+      parameters: z.object({}),
+      handler: async () => {
+        setIsDark((prev) => !prev);
+      },
+    },
+    [isDark],
+  );
 
   // ── HITL: Schedule Meeting ──────────────────────────────────────────────
   const [hitl, setHitl] = useState<HitlState | null>(null);
@@ -167,13 +183,15 @@ export function ChatScreen() {
         <View
           style={[
             styles.messageBubble,
-            isUser ? styles.userBubble : styles.assistantBubble,
+            isUser
+              ? [styles.userBubble, { backgroundColor: theme.primary }]
+              : [styles.assistantBubble, { backgroundColor: theme.card }],
           ]}
         >
           <Text
             style={[
               styles.messageText,
-              isUser ? styles.userText : styles.assistantText,
+              isUser ? styles.userText : { color: theme.text },
             ]}
           >
             {typeof content === "string" ? content : JSON.stringify(content)}
@@ -181,16 +199,21 @@ export function ChatScreen() {
         </View>
       );
     },
-    [hitl, handleHitlSelect, handleHitlDecline],
+    [hitl, handleHitlSelect, handleHitlDecline, theme],
   );
 
   return (
     <KeyboardAvoidingView
-      style={styles.container}
+      style={[styles.container, { backgroundColor: theme.bg }]}
       behavior={Platform.OS === "ios" ? "padding" : "height"}
       keyboardVerticalOffset={0}
     >
-      <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
+      <View
+        style={[
+          styles.header,
+          { paddingTop: insets.top + 8, backgroundColor: theme.primary },
+        ]}
+      >
         <View style={styles.headerRow}>
           <View>
             <Text style={styles.headerTitle}>CopilotKit Chat</Text>
@@ -220,18 +243,32 @@ export function ChatScreen() {
         }
         ListEmptyComponent={
           <View style={styles.emptyState}>
-            <Text style={styles.emptyText}>
-              Try asking to schedule a meeting
+            <Text style={[styles.emptyText, { color: theme.muted }]}>
+              Try one of the suggestions below
             </Text>
             <Pressable
-              style={styles.suggestionPill}
+              style={[styles.suggestionPill, { backgroundColor: theme.pillBg }]}
               onPress={() =>
                 sendSuggestion(
                   "I'd like to schedule a 30-minute meeting to learn about CopilotKit. Please use the scheduleTime tool to let me pick a time.",
                 )
               }
             >
-              <Text style={styles.suggestionText}>Schedule Meeting (HITL)</Text>
+              <Text style={[styles.suggestionText, { color: theme.primary }]}>
+                Schedule Meeting (HITL)
+              </Text>
+            </Pressable>
+            <Pressable
+              style={[styles.suggestionPill, { backgroundColor: theme.pillBg }]}
+              onPress={() =>
+                sendSuggestion(
+                  "Toggle the app theme using the toggleTheme tool.",
+                )
+              }
+            >
+              <Text style={[styles.suggestionText, { color: theme.primary }]}>
+                Toggle Theme (Frontend Tools)
+              </Text>
             </Pressable>
           </View>
         }
@@ -239,23 +276,41 @@ export function ChatScreen() {
 
       {isLoading && (
         <View style={styles.loadingBar}>
-          <Text style={styles.loadingText}>Thinking...</Text>
+          <Text style={[styles.loadingText, { color: theme.primary }]}>
+            Thinking...
+          </Text>
         </View>
       )}
 
-      <View style={[styles.inputRow, { paddingBottom: insets.bottom + 8 }]}>
+      <View
+        style={[
+          styles.inputRow,
+          {
+            paddingBottom: insets.bottom + 8,
+            backgroundColor: theme.inputBar,
+            borderTopColor: theme.border,
+          },
+        ]}
+      >
         <TextInput
-          style={styles.input}
+          style={[
+            styles.input,
+            { backgroundColor: theme.inputBg, color: theme.text },
+          ]}
           value={inputText}
           onChangeText={setInputText}
           placeholder="Type a message..."
-          placeholderTextColor="#999"
+          placeholderTextColor={theme.muted}
           multiline
           returnKeyType="send"
           onSubmitEditing={handleSend}
         />
         <TouchableOpacity
-          style={[styles.sendButton, isLoading && styles.sendButtonDisabled]}
+          style={[
+            styles.sendButton,
+            { backgroundColor: theme.primary },
+            isLoading && styles.sendButtonDisabled,
+          ]}
           onPress={handleSend}
           disabled={isLoading || !inputText.trim()}
         >
@@ -266,10 +321,34 @@ export function ChatScreen() {
   );
 }
 
+// ── Theme colors ──────────────────────────────────────────────────────────
+const lightColors = {
+  bg: "#f5f5f5",
+  primary: "#6366f1",
+  card: "#fff",
+  text: "#1a1a1a",
+  muted: "#999",
+  border: "#e0e0e0",
+  inputBar: "#fff",
+  inputBg: "#f0f0f0",
+  pillBg: "#e0e1ff",
+};
+
+const darkColors = {
+  bg: "#121212",
+  primary: "#818cf8",
+  card: "#1e1e1e",
+  text: "#e5e5e5",
+  muted: "#777",
+  border: "#2a2a2a",
+  inputBar: "#1a1a1a",
+  inputBg: "#2a2a2a",
+  pillBg: "#2d2b4e",
+};
+
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#f5f5f5" },
+  container: { flex: 1 },
   header: {
-    backgroundColor: "#6366f1",
     paddingHorizontal: 16,
     paddingBottom: 12,
   },
@@ -304,12 +383,10 @@ const styles = StyleSheet.create({
   },
   userBubble: {
     alignSelf: "flex-end",
-    backgroundColor: "#6366f1",
     borderBottomRightRadius: 4,
   },
   assistantBubble: {
     alignSelf: "flex-start",
-    backgroundColor: "#fff",
     borderBottomLeftRadius: 4,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 1 },
@@ -319,7 +396,6 @@ const styles = StyleSheet.create({
   },
   messageText: { fontSize: 15, lineHeight: 21 },
   userText: { color: "#fff" },
-  assistantText: { color: "#1a1a1a" },
   emptyState: {
     flex: 1,
     justifyContent: "center",
@@ -327,38 +403,32 @@ const styles = StyleSheet.create({
     paddingTop: 100,
     gap: 16,
   },
-  emptyText: { color: "#999", fontSize: 16 },
+  emptyText: { fontSize: 16 },
   suggestionPill: {
-    backgroundColor: "#e0e1ff",
     borderRadius: 20,
     paddingHorizontal: 16,
     paddingVertical: 10,
   },
-  suggestionText: { color: "#6366f1", fontWeight: "600", fontSize: 14 },
+  suggestionText: { fontWeight: "600", fontSize: 14 },
   loadingBar: { paddingHorizontal: 16, paddingVertical: 6 },
-  loadingText: { color: "#6366f1", fontSize: 13, fontStyle: "italic" },
+  loadingText: { fontSize: 13, fontStyle: "italic" },
   inputRow: {
     flexDirection: "row",
     alignItems: "flex-end",
     paddingHorizontal: 12,
     paddingTop: 8,
-    backgroundColor: "#fff",
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: "#e0e0e0",
   },
   input: {
     flex: 1,
-    backgroundColor: "#f0f0f0",
     borderRadius: 20,
     paddingHorizontal: 16,
     paddingTop: 10,
     paddingBottom: 10,
     fontSize: 15,
     maxHeight: 100,
-    color: "#1a1a1a",
   },
   sendButton: {
-    backgroundColor: "#6366f1",
     borderRadius: 20,
     paddingHorizontal: 16,
     paddingVertical: 10,
