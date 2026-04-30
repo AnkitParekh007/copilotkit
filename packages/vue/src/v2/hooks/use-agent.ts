@@ -268,7 +268,12 @@ export function useAgent(props: UseAgentProps = {}) {
       () => copilotkit.value.runtimeConnectionStatus,
       () => copilotkit.value.runtimeUrl,
       () => copilotkit.value.runtimeTransport,
-      () => JSON.stringify(copilotkit.value.headers),
+      () =>
+        JSON.stringify(
+          Object.entries(copilotkit.value.headers ?? {}).sort(([a], [b]) =>
+            a.localeCompare(b),
+          ),
+        ),
       threadId,
     ],
     resolveAgent,
@@ -276,7 +281,15 @@ export function useAgent(props: UseAgentProps = {}) {
   );
 
   watch(
-    [subscriptionAgent, () => JSON.stringify(copilotkit.value.headers)],
+    [
+      subscriptionAgent,
+      () =>
+        JSON.stringify(
+          Object.entries(copilotkit.value.headers ?? {}).sort(([a], [b]) =>
+            a.localeCompare(b),
+          ),
+        ),
+    ],
     ([currentAgent]) => {
       if (currentAgent instanceof HttpAgent) {
         currentAgent.headers = { ...copilotkit.value.headers };

@@ -111,14 +111,17 @@ export function useCopilotAction<const T extends Parameter[] | [] = []>(
   const normalizedAvailable: boolean | undefined =
     typedAction.available === undefined ? undefined : true;
 
-  useFrontendToolV2<MappedParameterTypes<T>>({
-    name: typedAction.name,
-    description: typedAction.description,
-    parameters: zodParameters,
-    handler: normalizedHandler,
-    followUp: typedAction.followUp,
-    render: typedAction.render,
-    available: normalizedAvailable,
-    agentId: typedAction.agentId,
-  });
+  useFrontendToolV2<MappedParameterTypes<T>>(
+    {
+      name: typedAction.name,
+      description: typedAction.description,
+      parameters: zodParameters,
+      handler: normalizedHandler,
+      followUp: typedAction.followUp,
+      render: typedAction.render,
+      available: normalizedAvailable,
+      agentId: typedAction.agentId,
+    },
+    deps,
+  );
 }

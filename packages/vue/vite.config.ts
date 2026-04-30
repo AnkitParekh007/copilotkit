@@ -23,15 +23,20 @@ export default defineConfig({
     rollupOptions: {
       external: [
         "vue",
+        "@a2ui/web_core",
+        "@a2ui/web_core/v0_9",
+        "@a2ui/web_core/v0_9/basic_catalog",
         "@ag-ui/client",
         "@ag-ui/core",
         "@copilotkit/core",
         "@copilotkit/shared",
         "@copilotkit/web-inspector",
+        "@jetbrains/websandbox",
         "streamdown-vue",
         "katex",
         "lucide-vue-next",
         "zod",
+        "zod-to-json-schema",
       ],
       output: {
         globals: { vue: "Vue" },

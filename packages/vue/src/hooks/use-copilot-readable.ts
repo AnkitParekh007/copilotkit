@@ -4,7 +4,7 @@
  * Provides app-state and other information to the Copilot context.
  * Delegates directly to the v2 CopilotKitCoreVue instance.
  */
-import { watch, ref } from "vue";
+import { watch, ref, type Ref } from "vue";
 import type { WatchSource } from "vue";
 import { useCopilotKit } from "../v2/providers/useCopilotKit";
 
@@ -26,7 +26,7 @@ export interface UseCopilotReadableOptions {
 export function useCopilotReadable(
   options: UseCopilotReadableOptions,
   deps?: WatchSource<unknown>[],
-): string | undefined {
+): Ref<string | undefined> {
   const { copilotkit } = useCopilotKit();
   const ctxIdRef = ref<string | undefined>(undefined);
 
@@ -46,12 +46,10 @@ export function useCopilotReadable(
 
       const { description, value, convert, available } = options;
 
-      // Serialize value once, using custom convert if provided
       const serializedValue = convert
         ? convert(description, value)
         : JSON.stringify(value);
 
-      // Check if context already exists with same data
       const found = Object.entries(core.context).find(([, ctxItem]) => {
         return (
           ctxItem.description === description &&
@@ -62,6 +60,10 @@ export function useCopilotReadable(
       if (found) {
         ctxIdRef.value = found[0];
         if (available === "disabled") core.removeContext(ctxIdRef.value);
+        onCleanup(() => {
+          if (!ctxIdRef.value) return;
+          core.removeContext(ctxIdRef.value);
+        });
         return;
       }
       if (!found && available === "disabled") return;
@@ -79,5 +81,5 @@ export function useCopilotReadable(
     { immediate: true },
   );
 
-  return ctxIdRef.value;
+  return ctxIdRef;
 }

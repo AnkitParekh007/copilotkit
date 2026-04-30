@@ -452,8 +452,8 @@ const Button = createVueComponent(ButtonApi, ({ props, buildChild }) => {
   );
 });
 
-const TextField = createVueComponent(TextFieldApi, ({ props }) => {
-  const uniqueId = useA2UIUniqueId();
+const TextField = createVueComponent(TextFieldApi, ({ props, state }) => {
+  const uniqueId = state.id;
   const isLong = props.variant === "longText";
   const type =
     props.variant === "number"
@@ -519,10 +519,10 @@ const TextField = createVueComponent(TextFieldApi, ({ props }) => {
         : null,
     ],
   );
-});
+}, () => ({ id: useA2UIUniqueId() }));
 
-const CheckBox = createVueComponent(CheckBoxApi, ({ props }) => {
-  const uniqueId = useA2UIUniqueId();
+const CheckBox = createVueComponent(CheckBoxApi, ({ props, state }) => {
+  const uniqueId = state.id;
   const hasError = props.validationErrors && props.validationErrors.length > 0;
 
   return h(
@@ -572,7 +572,7 @@ const CheckBox = createVueComponent(CheckBoxApi, ({ props }) => {
         : null,
     ],
   );
-});
+}, () => ({ id: useA2UIUniqueId() }));
 
 const ChoicePicker = createVueComponent(
   ChoicePickerApi,
@@ -704,8 +704,8 @@ const ChoicePicker = createVueComponent(
   () => ({ filter: ref("") }),
 );
 
-const Slider = createVueComponent(SliderApi, ({ props }) => {
-  const uniqueId = useA2UIUniqueId();
+const Slider = createVueComponent(SliderApi, ({ props, state }) => {
+  const uniqueId = state.id;
 
   return h(
     "div",
@@ -752,10 +752,10 @@ const Slider = createVueComponent(SliderApi, ({ props }) => {
       }),
     ],
   );
-});
+}, () => ({ id: useA2UIUniqueId() }));
 
-const DateTimeInput = createVueComponent(DateTimeInputApi, ({ props }) => {
-  const uniqueId = useA2UIUniqueId();
+const DateTimeInput = createVueComponent(DateTimeInputApi, ({ props, state }) => {
+  const uniqueId = state.id;
 
   let type = "datetime-local";
   if (props.enableDate && !props.enableTime) type = "date";
@@ -803,7 +803,7 @@ const DateTimeInput = createVueComponent(DateTimeInputApi, ({ props }) => {
       }),
     ],
   );
-});
+}, () => ({ id: useA2UIUniqueId() }));
 
 // ============================================================
 // Catalog Assembly

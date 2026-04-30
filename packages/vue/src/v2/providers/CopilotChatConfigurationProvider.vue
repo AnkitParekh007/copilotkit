@@ -36,11 +36,12 @@ const resolvedAgentId = computed(
   () => props.agentId ?? parentConfigValue.value?.agentId ?? DEFAULT_AGENT_ID,
 );
 
+const fallbackThreadId = randomUUID();
 const resolvedThreadId = computed(() => {
   if (props.threadId) return props.threadId;
   if (parentConfigValue.value?.threadId)
     return parentConfigValue.value.threadId;
-  return randomUUID();
+  return fallbackThreadId;
 });
 
 const resolvedHasExplicitThreadId = computed(() => {

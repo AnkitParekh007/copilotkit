@@ -1,6 +1,5 @@
 @import "tailwindcss" prefix(cpk);
 @plugin "@tailwindcss/typography";
-@source "../../../../apps/**/*.{ts,tsx,vue}";
 @source "../**/*.{ts,tsx,vue}";
 @source "../../node_modules/streamdown-vue/dist/**/*.{js,mjs,cjs}";
 
