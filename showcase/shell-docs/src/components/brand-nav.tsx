@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { SearchTrigger } from "./search-trigger";
+import { LinkToCopilotCloud } from "./link-to-copilot-cloud";
 
 function CopilotKitIcon({ className }: { className?: string }) {
   return (
@@ -128,7 +129,6 @@ function ExternalArrowIcon({ className }: { className?: string }) {
 }
 
 const CLOUD_CTA = {
-  href: "https://cloud.copilotkit.ai",
   label: "Free Developer Access",
 };
 
@@ -257,18 +257,16 @@ export function BrandNav(_props: BrandNavProps = {}) {
 
         {/* Desktop: Cloud CTA + search */}
         <div className="hidden sm:flex items-center gap-2">
-          <Link
-            href={CLOUD_CTA.href}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[13px] font-medium text-[var(--text-secondary)] hover:text-[var(--text)] hover:bg-[var(--bg-elevated)] transition-all"
+          <LinkToCopilotCloud
+            asButton={false}
+            className="no-underline flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[13px] font-medium text-[var(--text-secondary)] hover:text-[var(--text)] hover:bg-[var(--bg-elevated)] transition-all"
           >
             <CloudIcon />
             <span className="[@media(width<1100px)]:hidden">
               {CLOUD_CTA.label}
             </span>
             <ExternalArrowIcon className="[@media(width<1100px)]:hidden opacity-70" />
-          </Link>
+          </LinkToCopilotCloud>
           <SearchTrigger />
         </div>
 
@@ -347,17 +345,15 @@ export function BrandNav(_props: BrandNavProps = {}) {
                   {label}
                 </Link>
               ))}
-              <Link
-                href={CLOUD_CTA.href}
-                target="_blank"
-                rel="noopener noreferrer"
+              <LinkToCopilotCloud
+                asButton={false}
                 onClick={() => setMobileMenuOpen(false)}
-                className="flex items-center gap-2 rounded-md px-3 py-2.5 text-[14px] font-medium text-[var(--text-secondary)] hover:text-[var(--text)] hover:bg-[var(--bg-elevated)] transition-all"
+                className="no-underline flex items-center gap-2 rounded-md px-3 py-2.5 text-[14px] font-medium text-[var(--text-secondary)] hover:text-[var(--text)] hover:bg-[var(--bg-elevated)] transition-all"
               >
                 <CloudIcon />
                 {CLOUD_CTA.label}
                 <ExternalArrowIcon className="opacity-70" />
-              </Link>
+              </LinkToCopilotCloud>
             </div>
             {/* AG-UI link at bottom */}
             <div className="mt-auto px-4 py-4 border-t border-[var(--border)]">
