@@ -3,6 +3,7 @@ import {
   FlatList,
   KeyboardAvoidingView,
   Platform,
+  Pressable,
   StyleSheet,
   Text,
   TextInput,
@@ -10,7 +11,19 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useAgent, useCopilotKit } from "@copilotkit/react-native";
+import { useAgent, useCopilotKit, useFrontendTool } from "@copilotkit/react-native";
+import { z } from "zod";
+import {
+  MeetingTimePicker,
+  type MeetingTimePickerStatus,
+} from "./MeetingTimePicker";
+
+interface HitlState {
+  status: MeetingTimePickerStatus;
+  reason?: string;
+  duration?: number;
+  selectedSlot?: { date: string; time: string; duration: string } | null;
+}
 
 export function ChatScreen() {
   const insets = useSafeAreaInsets();
@@ -23,6 +36,66 @@ export function ChatScreen() {
   const messages = agent?.messages ?? [];
   const isLoading = agent?.isRunning ?? false;
 
+  // ── HITL: Schedule Meeting ──────────────────────────────────────────────
+  const [hitl, setHitl] = useState<HitlState | null>(null);
+  const respondRef = useRef<((result: string) => void) | null>(null);
+
+  useFrontendTool({
+    name: "scheduleTime",
+    description: "Use human-in-the-loop to schedule a meeting with the user.",
+    parameters: z.object({
+      reasonForScheduling: z
+        .string()
+        .describe("Reason for scheduling, very brief - 5 words."),
+      meetingDuration: z
+        .number()
+        .describe("Duration of the meeting in minutes"),
+    }),
+    handler: async (args) => {
+      return new Promise<string>((resolve) => {
+        respondRef.current = resolve;
+        setHitl({
+          status: "selecting",
+          reason: args.reasonForScheduling,
+          duration: args.meetingDuration,
+        });
+      });
+    },
+  });
+
+  const handleHitlSelect = useCallback(
+    (slot: { date: string; time: string; duration: string }) => {
+      const result = `Meeting scheduled for ${slot.date} at ${slot.time} (${slot.duration}).`;
+      respondRef.current?.(result);
+      respondRef.current = null;
+      setHitl((prev) =>
+        prev ? { ...prev, status: "confirmed", selectedSlot: slot } : null,
+      );
+    },
+    [],
+  );
+
+  const handleHitlDecline = useCallback(() => {
+    respondRef.current?.(
+      "The user declined all proposed meeting times. Please suggest alternative times or ask for their availability.",
+    );
+    respondRef.current = null;
+    setHitl((prev) => (prev ? { ...prev, status: "declined" } : null));
+  }, []);
+
+  // ── Messages + HITL card as FlatList items ─────────────────────────────
+  const listItems = React.useMemo(() => {
+    const filtered = messages.filter(
+      (m: any) =>
+        m.role === "user" || (m.role === "assistant" && m.content),
+    );
+    if (hitl) {
+      return [...filtered, { id: "__hitl__", role: "hitl" }];
+    }
+    return filtered;
+  }, [messages, hitl]);
+
+  // ── Send message ───────────────────────────────────────────────────────
   const handleSend = useCallback(async () => {
     const text = inputText.trim();
     if (!text || isLoading || !agent) {
@@ -41,31 +114,59 @@ export function ChatScreen() {
     }
   }, [inputText, isLoading, agent, copilotkit]);
 
-  const renderMessage = useCallback(({ item }: { item: any }) => {
-    const isUser = item.role === "user";
-    const content = item.content ?? "";
-    if (!content && item.role === "tool") {
-      return null;
-    }
+  const sendSuggestion = useCallback(
+    (text: string) => {
+      if (isLoading || !agent) return;
+      agent.addMessage({
+        id: `user-${Date.now()}`,
+        role: "user",
+        content: text,
+      });
+      copilotkit.runAgent({ agent }).catch(console.error);
+    },
+    [isLoading, agent, copilotkit],
+  );
 
-    return (
-      <View
-        style={[
-          styles.messageBubble,
-          isUser ? styles.userBubble : styles.assistantBubble,
-        ]}
-      >
-        <Text
+  // ── Render items ───────────────────────────────────────────────────────
+  const renderItem = useCallback(
+    ({ item }: { item: any }) => {
+      if (item.role === "hitl" && hitl) {
+        return (
+          <MeetingTimePicker
+            status={hitl.status}
+            reason={hitl.reason}
+            duration={hitl.duration}
+            selectedSlot={hitl.selectedSlot}
+            onSelect={handleHitlSelect}
+            onDecline={handleHitlDecline}
+          />
+        );
+      }
+
+      const isUser = item.role === "user";
+      const content = item.content ?? "";
+      if (!content && item.role === "tool") return null;
+
+      return (
+        <View
           style={[
-            styles.messageText,
-            isUser ? styles.userText : styles.assistantText,
+            styles.messageBubble,
+            isUser ? styles.userBubble : styles.assistantBubble,
           ]}
         >
-          {typeof content === "string" ? content : JSON.stringify(content)}
-        </Text>
-      </View>
-    );
-  }, []);
+          <Text
+            style={[
+              styles.messageText,
+              isUser ? styles.userText : styles.assistantText,
+            ]}
+          >
+            {typeof content === "string" ? content : JSON.stringify(content)}
+          </Text>
+        </View>
+      );
+    },
+    [hitl, handleHitlSelect, handleHitlDecline],
+  );
 
   return (
     <KeyboardAvoidingView
@@ -75,16 +176,13 @@ export function ChatScreen() {
     >
       <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
         <Text style={styles.headerTitle}>CopilotKit Chat</Text>
-        <Text style={styles.headerSubtitle}>React Native Integration</Text>
+        <Text style={styles.headerSubtitle}>React Native · Human in the Loop</Text>
       </View>
 
       <FlatList
         ref={flatListRef}
-        data={messages.filter(
-          (m: any) =>
-            m.role === "user" || (m.role === "assistant" && m.content),
-        )}
-        renderItem={renderMessage}
+        data={listItems}
+        renderItem={renderItem}
         keyExtractor={(item: any, index: number) => item.id ?? String(index)}
         contentContainerStyle={styles.messageList}
         onContentSizeChange={() =>
@@ -92,7 +190,21 @@ export function ChatScreen() {
         }
         ListEmptyComponent={
           <View style={styles.emptyState}>
-            <Text style={styles.emptyText}>Send a message to get started</Text>
+            <Text style={styles.emptyText}>
+              Try asking to schedule a meeting
+            </Text>
+            <Pressable
+              style={styles.suggestionPill}
+              onPress={() =>
+                sendSuggestion(
+                  "I'd like to schedule a 30-minute meeting to learn about CopilotKit. Please use the scheduleTime tool to let me pick a time.",
+                )
+              }
+            >
+              <Text style={styles.suggestionText}>
+                Schedule Meeting (HITL)
+              </Text>
+            </Pressable>
           </View>
         }
       />
@@ -169,8 +281,16 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     paddingTop: 100,
+    gap: 16,
   },
   emptyText: { color: "#999", fontSize: 16 },
+  suggestionPill: {
+    backgroundColor: "#e0e1ff",
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+  suggestionText: { color: "#6366f1", fontWeight: "600", fontSize: 14 },
   loadingBar: { paddingHorizontal: 16, paddingVertical: 6 },
   loadingText: { color: "#6366f1", fontSize: 13, fontStyle: "italic" },
   inputRow: {
