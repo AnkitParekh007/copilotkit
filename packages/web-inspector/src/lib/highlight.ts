@@ -59,7 +59,17 @@ export function eventColors(type: string): { bg: string; fg: string } {
 }
 
 export function formatTimestamp(ts: string | number): string {
-  const date = typeof ts === "number" ? new Date(ts) : new Date(ts);
+  // Numeric-string handling: APIs occasionally serialize epoch-millis as a
+  // string (e.g. "1700000000000"). new Date(string) parses as ISO and returns
+  // NaN for these — coerce digit-only strings to numbers first so they parse
+  // as epoch-millis. Falls through to the existing Date(ts) for all other
+  // string shapes (ISO 8601, RFC 2822, etc.).
+  let date: Date;
+  if (typeof ts === "string" && /^\d+$/.test(ts)) {
+    date = new Date(Number(ts));
+  } else {
+    date = typeof ts === "number" ? new Date(ts) : new Date(ts);
+  }
   if (Number.isNaN(date.getTime())) return "";
   const ms = date.getMilliseconds().toString().padStart(3, "0");
   return (

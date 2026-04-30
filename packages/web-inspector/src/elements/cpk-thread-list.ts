@@ -176,8 +176,11 @@ class CpkThreadList extends LitElement {
     return this.threads.filter(
       (t) =>
         (t.name?.toLowerCase().includes(q) ?? false) ||
-        t.agentId.toLowerCase().includes(q) ||
-        t.id.toLowerCase().includes(q),
+        // agentId is typed as required on ɵThread, but data ultimately comes
+        // from a network endpoint — guard with ?. so a malformed payload
+        // doesn't throw and crash the whole search.
+        (t.agentId?.toLowerCase().includes(q) ?? false) ||
+        (t.id?.toLowerCase().includes(q) ?? false),
     );
   }
 
@@ -234,7 +237,7 @@ class CpkThreadList extends LitElement {
                   >
                 </div>
                 <div class="cpk-tl__meta">
-                  <span class="cpk-tl__pill">${thread.agentId}</span>
+                  <span class="cpk-tl__pill">${thread.agentId ?? "—"}</span>
                 </div>
               </div>
             `,

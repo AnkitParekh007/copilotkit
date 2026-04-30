@@ -317,15 +317,24 @@ class CpkThreadGate extends LitElement {
 
   connectedCallback(): void {
     super.connectedCallback();
-    // If the unlock cookie is already present, immediately notify the parent
-    // so it can skip the gate UI entirely (matches the prior behavior on
+    // If the unlock cookie is already present, notify the parent so it can
+    // skip the gate UI entirely (matches the prior behavior on
     // WebInspectorElement.hydrateStateFromStorageEarly).
     // getCookie matches the exact name so a substring like
     // "xcpk_threads_access" can never satisfy this check.
+    //
+    // Defer dispatch via queueMicrotask so consumers that attach the
+    // `unlock` listener via addEventListener AFTER construction (the
+    // post-mount listener-attach pattern) still observe the event.
+    // A synchronous dispatch would fire before any post-mount listener
+    // could be wired up, silently dropping the unlock signal.
     if (getCookie("cpk_threads_access") === "1") {
-      this.dispatchEvent(
-        new CustomEvent("unlock", { bubbles: true, composed: true }),
-      );
+      queueMicrotask(() => {
+        if (!this.isConnected) return;
+        this.dispatchEvent(
+          new CustomEvent("unlock", { bubbles: true, composed: true }),
+        );
+      });
     }
   }
 

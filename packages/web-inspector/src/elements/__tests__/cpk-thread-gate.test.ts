@@ -1,4 +1,12 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import {
+  describe,
+  it,
+  expect,
+  beforeEach,
+  afterEach,
+  afterAll,
+  vi,
+} from "vitest";
 
 // Importing the module registers the custom element. We never mount it into
 // the DOM in these tests because jsdom 29's CSS shorthand parser chokes on
@@ -48,6 +56,16 @@ function makeConnectedGate(): HTMLElement & GateInternals {
 let cookieJar = "";
 let lastWrittenCookie = "";
 
+// Cache the original `cookie` descriptor at module load so we can restore it
+// after this test file finishes. installCookieMock redefines the property per
+// beforeEach with a configurable mock; without a final restore, subsequent
+// test files in the same vitest worker would inherit the stale mock and see
+// confusing cookie behavior. The descriptor lives on Document.prototype in
+// jsdom, so we look there first and fall back to document for safety.
+const ORIGINAL_COOKIE_DESCRIPTOR =
+  Object.getOwnPropertyDescriptor(Document.prototype, "cookie") ??
+  Object.getOwnPropertyDescriptor(document, "cookie");
+
 function installCookieMock(initial: string): void {
   cookieJar = initial;
   lastWrittenCookie = "";
@@ -72,34 +90,55 @@ describe("cpk-thread-gate", () => {
     vi.useRealTimers();
   });
 
+  afterAll(() => {
+    // Restore the original document.cookie descriptor so the leftover mock
+    // doesn't bleed into subsequent test files in the same vitest worker.
+    if (ORIGINAL_COOKIE_DESCRIPTOR) {
+      Object.defineProperty(document, "cookie", ORIGINAL_COOKIE_DESCRIPTOR);
+    } else {
+      // No original descriptor cached — best-effort: drop the mock so
+      // accessors fall through to the prototype.
+      delete (document as unknown as { cookie?: string }).cookie;
+    }
+  });
+
   it("registers as cpk-thread-gate", () => {
     expect(customElements.get("cpk-thread-gate")).toBeDefined();
   });
 
-  it("dispatches `unlock` (composed + bubbles) when the cookie is already set on connect", () => {
+  it("dispatches `unlock` (composed + bubbles) when the cookie is already set on connect", async () => {
     installCookieMock("cpk_threads_access=1; SameSite=Lax");
-    const gate = makeGate();
+    const gate = makeConnectedGate();
     let received: CustomEvent | null = null;
     gate.addEventListener("unlock", (e) => {
       received = e as CustomEvent;
     });
-    // Invoke connectedCallback directly. Connecting via appendChild would
-    // trigger the gate's render → jsdom CSS parser blowup on linear-gradient.
+    // Invoke connectedCallback directly so we control timing. The dispatch is
+    // deferred via queueMicrotask so consumers attaching a listener after
+    // construction can still observe it — flush microtasks before asserting.
     gate.connectedCallback();
+    // Use real timers for the microtask flush so vi.useFakeTimers (set up in
+    // beforeEach) doesn't trap the queued callback.
+    vi.useRealTimers();
+    await Promise.resolve();
+    vi.useFakeTimers();
     expect(received).not.toBeNull();
     const ev = received as unknown as CustomEvent;
     expect(ev.bubbles).toBe(true);
     expect(ev.composed).toBe(true);
   });
 
-  it("does NOT dispatch `unlock` on connect when the cookie is absent", () => {
+  it("does NOT dispatch `unlock` on connect when the cookie is absent", async () => {
     installCookieMock("");
-    const gate = makeGate();
+    const gate = makeConnectedGate();
     let dispatched = false;
     gate.addEventListener("unlock", () => {
       dispatched = true;
     });
     gate.connectedCallback();
+    vi.useRealTimers();
+    await Promise.resolve();
+    vi.useFakeTimers();
     expect(dispatched).toBe(false);
   });
 
@@ -144,7 +183,10 @@ describe("cpk-thread-gate", () => {
   it("trims whitespace and is case-insensitive when comparing the access code", () => {
     installCookieMock("");
     const gate = makeConnectedGate();
-    gate._submitThreadsCode("  earlyaccess  ");
+    // Use mixed-case input so this assertion exercises BOTH trimming and
+    // case-insensitivity (the previous all-lowercase fixture only verified
+    // trimming, leaving the case-folding behavior untested).
+    gate._submitThreadsCode("  EarlyAccess  ");
     expect(gate._threadsUnlocking).toBe(true);
     expect(lastWrittenCookie).toContain("cpk_threads_access=1");
   });
