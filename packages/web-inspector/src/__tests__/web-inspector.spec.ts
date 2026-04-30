@@ -141,16 +141,15 @@ function createMockCore(
         }),
       );
       // If a previous store existed, the registry would also have unregistered
-      // it. Fire that event with oldStore so the new contract is exercised.
+      // it. Fire the unregister event with the prior store so the inspector's
+      // cleanup path is exercised against the real core contract.
       if (previous && previous !== store) {
         subscribers.forEach((subscriber) =>
           subscriber.onThreadStoreUnregistered?.({
             copilotkit: core as unknown as CopilotKitCore,
             agentId,
-            // The new core contract carries oldStore; the local types may
-            // not yet describe it, so pass it through a cast.
-            ...({ oldStore: previous } as Record<string, unknown>),
-          } as Parameters<NonNullable<CopilotKitCoreSubscriber["onThreadStoreUnregistered"]>>[0]),
+            store: previous as never,
+          }),
         );
       }
     },
@@ -162,8 +161,8 @@ function createMockCore(
         subscriber.onThreadStoreUnregistered?.({
           copilotkit: core as unknown as CopilotKitCore,
           agentId,
-          ...({ oldStore: previous } as Record<string, unknown>),
-        } as Parameters<NonNullable<CopilotKitCoreSubscriber["onThreadStoreUnregistered"]>>[0]),
+          store: previous as never,
+        }),
       );
     },
   };
@@ -323,8 +322,9 @@ describe("WebInspectorElement", () => {
     //
     // The inspector's onThreadStoreUnregistered handler is responsible for
     // dropping the local owned-store entry when core fires the unregister
-    // event with `oldStore`. After that, ensureOwnedThreadStore can register
-    // a fresh store and the new instance ends up in _ownedThreadStores.
+    // event with the (now-removed) `store`. After that,
+    // ensureOwnedThreadStore can register a fresh store and the new instance
+    // ends up in _ownedThreadStores.
     const { agent: agentA } = createMockAgent("alpha");
     const mockCore = createMockCore(
       { alpha: agentA },
@@ -344,13 +344,13 @@ describe("WebInspectorElement", () => {
 
     // Remove the agent. processAgentsChanged sees alpha is gone, but per the
     // file's invariant it does NOT teardown owned stores there. Simulate the
-    // core also unregistering the store (which fires onThreadStoreUnregistered
-    // with oldStore).
+    // core also unregistering the store (which fires
+    // onThreadStoreUnregistered with the unregistered store).
     mockCore.emitAgentsChanged({});
     mockCore.core.unregisterThreadStore("alpha");
     await inspector.updateComplete;
 
-    // After unregister with oldStore, the local owned-stores Map must no
+    // After the unregister fires, the local owned-stores Map must no
     // longer reference the stale store — otherwise re-registration below
     // short-circuits on the early-return.
     expect(internals._ownedThreadStores.has("alpha")).toBe(false);
@@ -368,6 +368,68 @@ describe("WebInspectorElement", () => {
     expect(refreshedStore).not.toBe(initialStore);
     // Core registry should also have the new instance.
     expect(mockCore.stores.get("alpha")).toBe(refreshedStore);
+  });
+
+  it("stops the unregistered owned store when a replacement registration happens (CR R2 #1)", async () => {
+    // Synthetic-revert scenario: when a foreign caller (e.g. useThreads())
+    // registers a NEW store while the inspector already owns one, the
+    // registry fires onThreadStoreUnregistered with the OLD store as
+    // `event.store` and immediately fires onThreadStoreRegistered for the
+    // new one. The inspector's handler must stop+drop the old owned store.
+    //
+    // Before this fix, the handler read `event.oldStore` (which never
+    // existed on the contract — it was always undefined). The defensive
+    // fallback `getThreadStore(agentId) === undefined` handled the plain
+    // unregister case but NOT this replace case (where getThreadStore
+    // returns the new replacement store), so the old store leaked.
+    const { agent: agentA } = createMockAgent("alpha");
+    const mockCore = createMockCore(
+      { alpha: agentA },
+      { runtimeUrl: "http://runtime.test" },
+    );
+    const inspector = createInspectorWithCore(mockCore.core);
+
+    mockCore.emitAgentsChanged();
+    await inspector.updateComplete;
+
+    const internals = getInternals(inspector);
+    const ownedStore = internals._ownedThreadStores.get("alpha");
+    expect(ownedStore).toBeDefined();
+    // Spy on stop() so we can assert the inspector cleaned up the old store.
+    const stopSpy = vi.spyOn(
+      ownedStore as unknown as { stop: () => void },
+      "stop",
+    );
+
+    // Foreign caller registers a NEW store. The mock's registerThreadStore
+    // fires onThreadStoreUnregistered({ store: previous }) for the OLD one,
+    // then onThreadStoreRegistered for the NEW one — this is the replace
+    // contract that the broken `oldStore` read could not detect.
+    //
+    // Inspector subscribes via `store.select(...).subscribe(...)`, so the
+    // replacement must mirror that minimal selector-observable API.
+    const replacementStore = {
+      stop: vi.fn(),
+      start: vi.fn(),
+      setContext: vi.fn(),
+      // Inspector subscribes via `store.select(...).subscribe(...)` and then
+      // immediately reads `store.getState()` to seed the threads list.
+      select: vi.fn(() => ({
+        subscribe: vi.fn(() => ({ unsubscribe: vi.fn() })),
+      })),
+      getState: vi.fn(() => ({ threads: [] })),
+    };
+    mockCore.core.registerThreadStore("alpha", replacementStore);
+    await inspector.updateComplete;
+
+    // The previous owned store should have been stopped — that's the cleanup
+    // path the broken code missed because the defensive fallback only fires
+    // when getThreadStore() returns undefined, which it doesn't on a replace.
+    expect(stopSpy).toHaveBeenCalledTimes(1);
+    // The owned-store map must no longer reference the stale store.
+    expect(internals._ownedThreadStores.get("alpha")).not.toBe(ownedStore);
+    // Core registry now points at the replacement.
+    expect(mockCore.stores.get("alpha")).toBe(replacementStore);
   });
 
   it("syncs agent state on direct setState (onStateChanged without pipeline events)", async () => {

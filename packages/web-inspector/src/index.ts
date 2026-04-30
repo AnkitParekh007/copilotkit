@@ -370,7 +370,14 @@ export class WebInspectorElement extends LitElement {
   }
 
   private autoSelectLatestThread(): void {
-    if (this._threads.length === 0) return;
+    if (this._threads.length === 0) {
+      // No threads available — clear any previously-selected id so the
+      // details panel doesn't keep fetching against a stale thread.
+      if (this.selectedThreadId !== null) {
+        this.selectedThreadId = null;
+      }
+      return;
+    }
     const stillValid =
       this.selectedThreadId != null &&
       this._threads.some((t) => t.id === this.selectedThreadId);
@@ -535,18 +542,15 @@ export class WebInspectorElement extends LitElement {
         this.subscribeToThreadStore(agentId, store);
         this.requestUpdate();
       },
-      // Receives `oldStore` from the @copilotkit/core ThreadStoreRegistry so
-      // we can stop and drop our owned-store reference when core unregisters
-      // it (e.g. when the agent is removed). Without dropping the stale entry
-      // here, ensureOwnedThreadStore would early-return on re-registration and
-      // the threads view would never repopulate.
+      // Receives the (now-removed) `store` from the @copilotkit/core
+      // ThreadStoreRegistry so we can stop and drop our owned-store reference
+      // when core unregisters it (e.g. when the agent is removed). Without
+      // dropping the stale entry here, ensureOwnedThreadStore would early-
+      // return on re-registration and the threads view would never repopulate.
+      // The core's contract is `{ copilotkit, agentId, store }` where `store`
+      // is the OLD store that was just unregistered.
       onThreadStoreUnregistered: (event) => {
-        const { agentId } = event;
-        // The new core contract passes oldStore as a second field on event;
-        // the locally installed @copilotkit/core types don't yet describe it.
-        // The cast is a temporary bridge until the cherry-pick lands and the
-        // CopilotKitCoreSubscriber type is regenerated against the new shape.
-        const oldStore = (event as { oldStore?: ɵThreadStore }).oldStore;
+        const { agentId, store: unregisteredStore } = event;
         const unsub = this._threadStoreSubscriptions.get(agentId);
         if (unsub) {
           unsub();
@@ -558,13 +562,13 @@ export class WebInspectorElement extends LitElement {
         // unregistered. A different store (e.g. one a consumer registered via
         // useThreads()) is none of our business to stop.
         const owned = this._ownedThreadStores.get(agentId);
-        if (oldStore && owned === oldStore) {
-          oldStore.stop();
+        if (unregisteredStore && owned === unregisteredStore) {
+          unregisteredStore.stop();
           this._ownedThreadStores.delete(agentId);
-        } else if (!oldStore && owned) {
-          // Defensive fallback for the in-flight gap where the core may still
-          // be on the old single-arg contract: if we have an owned store and
-          // core no longer knows about it, treat as ours-to-clean.
+        } else if (!unregisteredStore && owned) {
+          // Defensive fallback: if for any reason the event omits the store
+          // and we have an owned store but core no longer knows about it,
+          // treat as ours-to-clean.
           if (this.core?.getThreadStore(agentId) === undefined) {
             owned.stop();
             this._ownedThreadStores.delete(agentId);
@@ -1340,11 +1344,8 @@ ${argsString}</pre
         this.requestUpdate();
       }, 2000);
     } catch (err) {
-      // Keep the existing console.error for backward-compat (developers
-      // already grep for this string), and route through swallowError so the
-      // failure shows up consistently with the rest of the inspector's
-      // graceful-degradation breadcrumbs.
-      console.error("Failed to copy to clipboard:", err);
+      // Route through swallowError so the failure shows up consistently with
+      // the rest of the inspector's graceful-degradation breadcrumbs.
       swallowError(
         err,
         "WebInspectorElement.copyToClipboard",
@@ -5307,6 +5308,10 @@ ${prettyEvent}</pre
 }
 
 export function defineWebInspector(): void {
+  // Guard against SSR / Node environments where customElements is undefined.
+  if (typeof customElements === "undefined") {
+    return;
+  }
   if (!customElements.get(WEB_INSPECTOR_TAG)) {
     customElements.define(WEB_INSPECTOR_TAG, WebInspectorElement);
   }

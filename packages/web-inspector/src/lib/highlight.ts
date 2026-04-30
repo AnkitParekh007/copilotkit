@@ -68,7 +68,7 @@ export function formatTimestamp(ts: string | number): string {
   if (typeof ts === "string" && /^\d+$/.test(ts)) {
     date = new Date(Number(ts));
   } else {
-    date = typeof ts === "number" ? new Date(ts) : new Date(ts);
+    date = new Date(ts);
   }
   if (Number.isNaN(date.getTime())) return "";
   const ms = date.getMilliseconds().toString().padStart(3, "0");
