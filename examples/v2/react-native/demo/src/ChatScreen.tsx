@@ -20,6 +20,7 @@ import { z } from "zod";
 import { MeetingTimePicker } from "./MeetingTimePicker";
 import type { MeetingTimePickerStatus } from "./MeetingTimePicker";
 import { PieChart } from "./PieChart";
+import { TaskManager } from "./TaskManager";
 
 interface HitlState {
   status: MeetingTimePickerStatus;
@@ -40,6 +41,7 @@ export function ChatScreen() {
   const [inputText, setInputText] = useState("");
   const [threadId, setThreadId] = useState(generateThreadId);
   const [isDark, setIsDark] = useState(false);
+  const [appMode, setAppMode] = useState(false);
   const flatListRef = useRef<FlatList>(null);
 
   const { copilotkit } = useCopilotKit();
@@ -61,6 +63,32 @@ export function ChatScreen() {
       },
     },
     [isDark],
+  );
+
+  // ── Frontend Tool: Enable/Disable App Mode ──────────────────────────────
+  useFrontendTool(
+    {
+      name: "enableAppMode",
+      description:
+        "Enable app mode, make sure its open when interacting with todos.",
+      parameters: z.object({}),
+      handler: async () => {
+        setAppMode(true);
+      },
+    },
+    [appMode],
+  );
+
+  useFrontendTool(
+    {
+      name: "enableChatMode",
+      description: "Enable chat mode",
+      parameters: z.object({}),
+      handler: async () => {
+        setAppMode(false);
+      },
+    },
+    [appMode],
   );
 
   // ── Controlled Generative UI: Pie Chart ─────────────────────────────────
@@ -147,6 +175,7 @@ export function ChatScreen() {
     setThreadId(generateThreadId());
     setCharts([]);
     setHitl(null);
+    setAppMode(false);
     respondRef.current = null;
     setInputText("");
   }, []);
@@ -271,16 +300,44 @@ export function ChatScreen() {
               React Native · Human in the Loop
             </Text>
           </View>
-          {messages.length > 0 && (
-            <TouchableOpacity
-              style={styles.newChatButton}
-              onPress={handleNewThread}
-            >
-              <Text style={styles.newChatButtonText}>+ New Chat</Text>
-            </TouchableOpacity>
-          )}
+          <View style={styles.headerButtons}>
+            {(agent?.state?.todos?.length > 0 || appMode) && (
+              <TouchableOpacity
+                style={styles.modeToggleButton}
+                onPress={() => setAppMode((prev) => !prev)}
+              >
+                <Text style={styles.modeToggleText}>
+                  {appMode ? "Chat" : "Tasks"}
+                </Text>
+              </TouchableOpacity>
+            )}
+            {messages.length > 0 && (
+              <TouchableOpacity
+                style={styles.newChatButton}
+                onPress={handleNewThread}
+              >
+                <Text style={styles.newChatButtonText}>+ New Chat</Text>
+              </TouchableOpacity>
+            )}
+          </View>
         </View>
       </View>
+
+      {appMode && (
+        <View
+          style={[
+            styles.taskManagerPanel,
+            { borderBottomColor: theme.border },
+          ]}
+        >
+          <TaskManager
+            todos={agent?.state?.todos || []}
+            onUpdate={(updatedTodos) => agent?.setState({ todos: updatedTodos })}
+            isAgentRunning={isLoading}
+            theme={theme}
+          />
+        </View>
+      )}
 
       <FlatList
         ref={flatListRef}
@@ -330,6 +387,18 @@ export function ChatScreen() {
             >
               <Text style={[styles.suggestionText, { color: theme.primary }]}>
                 Toggle Theme (Frontend Tools)
+              </Text>
+            </Pressable>
+            <Pressable
+              style={[styles.suggestionPill, { backgroundColor: theme.pillBg }]}
+              onPress={() =>
+                sendSuggestion(
+                  "Enable app mode and add three todos about learning CopilotKit: one about reading the docs, one about building a prototype, and one about exploring agent state.",
+                )
+              }
+            >
+              <Text style={[styles.suggestionText, { color: theme.primary }]}>
+                Task Manager (Shared State)
               </Text>
             </Pressable>
           </View>
@@ -498,4 +567,17 @@ const styles = StyleSheet.create({
   },
   sendButtonDisabled: { opacity: 0.5 },
   sendButtonText: { color: "#fff", fontWeight: "600", fontSize: 15 },
+  headerButtons: { flexDirection: "row", alignItems: "center", gap: 8 },
+  modeToggleButton: {
+    backgroundColor: "rgba(255,255,255,0.2)",
+    borderRadius: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  modeToggleText: { color: "#fff", fontSize: 13, fontWeight: "600" },
+  taskManagerPanel: {
+    flex: 1,
+    maxHeight: "55%",
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
 });
