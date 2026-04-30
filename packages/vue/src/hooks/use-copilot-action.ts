@@ -6,11 +6,26 @@
  */
 import type { WatchSource } from "vue";
 import type { Parameter, MappedParameterTypes } from "@copilotkit/shared";
-import { getZodParameters } from "@copilotkit/shared";
+import { getZodParameters, parseJson } from "@copilotkit/shared";
 import { useFrontendTool as useFrontendToolV2 } from "../v2/hooks/use-frontend-tool";
 import { useHumanInTheLoop as useHumanInTheLoopV2 } from "../v2/hooks/use-human-in-the-loop";
 import { useRenderTool as useRenderToolV2 } from "../v2/hooks/use-render-tool";
 import type { VueFrontendTool, VueHumanInTheLoop } from "../v2/types";
+
+// Wraps a v1 render function so a JSON-string `result` is parsed before being
+// passed through. Mirrors the v1 React behavior. If render is a Component
+// (object) rather than a function, returns it unchanged — Components receive
+// props through Vue's prop system and the user is responsible for parsing.
+function wrapRenderWithJsonResult<R>(render: R): R {
+  if (typeof render !== "function") return render;
+  return ((props: { result?: unknown }) => {
+    const next =
+      typeof props.result === "string"
+        ? { ...props, result: parseJson(props.result, props.result) }
+        : props;
+    return (render as (p: unknown) => unknown)(next);
+  }) as R;
+}
 
 export interface FrontendAction<T extends Parameter[] | [] = []> {
   name: string;
@@ -44,7 +59,9 @@ export function useCopilotAction<const T extends Parameter[] | [] = []>(
     useRenderToolV2(
       {
         name: "*",
-        render: (action as CatchAllFrontendAction).render,
+        render: wrapRenderWithJsonResult(
+          (action as CatchAllFrontendAction).render,
+        ),
         ...("agentId" in action
           ? { agentId: (action as FrontendAction<T>).agentId }
           : {}),
@@ -71,7 +88,9 @@ export function useCopilotAction<const T extends Parameter[] | [] = []>(
         name: typedAction.name,
         description: typedAction.description,
         parameters: zodParameters,
-        render: render as VueHumanInTheLoop<MappedParameterTypes<T>>["render"],
+        render: wrapRenderWithJsonResult(render) as VueHumanInTheLoop<
+          MappedParameterTypes<T>
+        >["render"],
         agentId: typedAction.agentId,
       },
       deps,
@@ -89,7 +108,9 @@ export function useCopilotAction<const T extends Parameter[] | [] = []>(
         {
           name: typedAction.name,
           parameters: zodParameters,
-          render: typedAction.render as (props: unknown) => unknown,
+          render: wrapRenderWithJsonResult(
+            typedAction.render as (props: unknown) => unknown,
+          ),
           agentId: typedAction.agentId,
         },
         deps,
@@ -118,7 +139,7 @@ export function useCopilotAction<const T extends Parameter[] | [] = []>(
       parameters: zodParameters,
       handler: normalizedHandler,
       followUp: typedAction.followUp,
-      render: typedAction.render,
+      render: wrapRenderWithJsonResult(typedAction.render),
       available: normalizedAvailable,
       agentId: typedAction.agentId,
     },

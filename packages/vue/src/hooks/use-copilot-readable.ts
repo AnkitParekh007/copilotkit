@@ -60,10 +60,6 @@ export function useCopilotReadable(
       if (found) {
         ctxIdRef.value = found[0];
         if (available === "disabled") core.removeContext(ctxIdRef.value);
-        onCleanup(() => {
-          if (!ctxIdRef.value) return;
-          core.removeContext(ctxIdRef.value);
-        });
         return;
       }
       if (!found && available === "disabled") return;

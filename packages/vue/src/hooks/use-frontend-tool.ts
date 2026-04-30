@@ -9,6 +9,7 @@ import {
   type Parameter,
   type MappedParameterTypes,
   getZodParameters,
+  parseJson,
 } from "@copilotkit/shared";
 import { useFrontendTool as useFrontendToolV2 } from "../v2/hooks/use-frontend-tool";
 import type { VueFrontendTool } from "../v2/types";
@@ -45,6 +46,20 @@ export function useFrontendTool<const T extends Parameter[] = []>(
     ? (args: MappedParameterTypes<T>) => Promise.resolve(handler(args))
     : undefined;
 
+  // Wrap render to parse JSON-string results before passing them to the
+  // user's render function — matches the v1 React behavior. If render is a
+  // Component rather than a function, leave it unchanged.
+  const normalizedRender =
+    typeof render === "function"
+      ? ((props: { result?: unknown }) => {
+          const renderProps =
+            typeof props.result === "string"
+              ? { ...props, result: parseJson(props.result, props.result) }
+              : props;
+          return (render as (p: unknown) => unknown)(renderProps);
+        })
+      : render;
+
   useFrontendToolV2<MappedParameterTypes<T>>(
     {
       name,
@@ -52,7 +67,7 @@ export function useFrontendTool<const T extends Parameter[] = []>(
       parameters: zodParameters,
       handler: normalizedHandler,
       followUp,
-      render,
+      render: normalizedRender,
       available: available === undefined ? undefined : available !== "disabled",
       agentId,
     },
