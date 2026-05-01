@@ -202,6 +202,11 @@ export function BrandNav(_props: BrandNavProps = {}) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const posthog = usePostHog();
 
+  const handleTalkToEngineersClick = () => {
+    posthog?.capture("talk_to_us_clicked", { location: "docs_nav" });
+    window.location.href = "https://copilotkit.ai/contact-us";
+  };
+
   const handleFreeDeveloperAccessClick = (location: string) => {
     posthog?.capture("try_for_free_clicked", { location });
   };
@@ -260,8 +265,16 @@ export function BrandNav(_props: BrandNavProps = {}) {
           ))}
         </div>
 
-        {/* Desktop: Cloud CTA + search */}
+        {/* Desktop: Talk-to-Engineers + Cloud CTA + search */}
         <div className="hidden sm:flex items-center gap-2">
+          <button
+            type="button"
+            onClick={handleTalkToEngineersClick}
+            className="hidden [@media(width>=1400px)]:flex items-center rounded-md px-3 py-1.5 text-[13px] font-medium text-[var(--text-muted)] hover:text-[#7076D5] hover:bg-[#7076D5]/10 transition-colors duration-200 cursor-pointer whitespace-nowrap"
+            aria-label="Talk to our engineers"
+          >
+            Talk to Our Engineers
+          </button>
           <a
             href="https://dashboard.operations.copilotkit.ai/?utm_source=docs&utm_medium=cta&utm_campaign=intelligence&utm_content=navbar"
             target="_blank"
@@ -367,6 +380,17 @@ export function BrandNav(_props: BrandNavProps = {}) {
                 {CLOUD_CTA.label}
                 <ExternalArrowIcon className="opacity-70" />
               </a>
+              <button
+                type="button"
+                onClick={() => {
+                  setMobileMenuOpen(false);
+                  handleTalkToEngineersClick();
+                }}
+                className="text-left rounded-md px-3 py-2.5 text-[14px] font-medium text-[var(--text-secondary)] hover:text-[#7076D5] hover:bg-[#7076D5]/10 transition-all cursor-pointer"
+                aria-label="Talk to our engineers"
+              >
+                Talk to Our Engineers
+              </button>
             </div>
             {/* AG-UI link at bottom */}
             <div className="mt-auto px-4 py-4 border-t border-[var(--border)]">
