@@ -28,9 +28,7 @@ export default function CopilotKitPage() {
 
   return (
     <main
-      style={
-        { "--copilot-kit-primary-color": themeColor } as CSSProperties
-      }
+      style={{ "--copilot-kit-primary-color": themeColor } as CSSProperties}
     >
       <YourMainContent themeColor={themeColor} />
       <CopilotSidebar

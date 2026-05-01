@@ -6,7 +6,10 @@ import {
   useFrontendTool,
   useAgent,
 } from "@copilotkit/react-core/v2";
-import { CopilotKitCSSProperties, CopilotSidebar } from "@copilotkit/react-core/v2";
+import {
+  CopilotKitCSSProperties,
+  CopilotSidebar,
+} from "@copilotkit/react-core/v2";
 import { useEffect, useState } from "react";
 import { DefaultToolComponent } from "@/components/default-tool-ui";
 import { WeatherCard } from "@/components/weather";
