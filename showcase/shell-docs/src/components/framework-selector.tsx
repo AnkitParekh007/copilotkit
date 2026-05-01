@@ -9,6 +9,7 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
+import posthog from "posthog-js";
 import { useFramework } from "./framework-provider";
 import { FrameworkLogo } from "./icons/framework-icons";
 
@@ -150,6 +151,21 @@ export function FrameworkSelector({
 
   function selectFramework(slug: string) {
     setStoredFramework(slug);
+    // Fire a PostHog event so analytics dashboards can see which
+    // backend readers pick. Wrapped in try/catch — PostHog can be
+    // blocked by ad blockers or fail to initialize, and a broken
+    // analytics call must never break navigation.
+    try {
+      const opt = options.find((o) => o.slug === slug);
+      posthog.capture("framework_selected", {
+        framework: slug,
+        framework_name: opt?.name ?? slug,
+        category: opt?.category,
+        from_path: pathname,
+      });
+    } catch {
+      // Swallow — analytics is fire-and-forget.
+    }
     // replace vs push: picking a backend is a pivot on the same logical
     // page, not a forward navigation. Using `push` clutters the back
     // stack with every framework the user clicked through, which makes
