@@ -1,12 +1,12 @@
 "use client";
 
 import {
-  useDefaultTool,
+  useDefaultRenderTool,
   useRenderToolCall,
   useFrontendTool,
-  useCoAgent,
-} from "@copilotkit/react-core";
-import { CopilotKitCSSProperties, CopilotSidebar } from "@copilotkit/react-ui";
+  useAgent,
+} from "@copilotkit/react-core/v2";
+import { CopilotKitCSSProperties, CopilotSidebar } from "@copilotkit/react-core/v2";
 import { useEffect, useState } from "react";
 import { DefaultToolComponent } from "@/components/default-tool-ui";
 import { WeatherCard } from "@/components/weather";
@@ -71,8 +71,8 @@ export default function CopilotKitPage() {
 }
 
 function YourMainContent({ themeColor }: { themeColor: string }) {
-  // 🪁 Use CoAgent to get shared state from backend
-  const { state, setState } = useCoAgent({
+  // 🪁 Use Agent to get shared state from backend
+  const { state, setState } = useAgent({
     name: "strands_agent",
     initialState: {
       proverbs: [
@@ -104,7 +104,7 @@ function YourMainContent({ themeColor }: { themeColor: string }) {
   );
 
   //🪁 Default Generative UI: https://docs.copilotkit.ai/strands/generative-ui/backend-tools
-  useDefaultTool(
+  useDefaultRenderTool(
     {
       render: (props) => (
         <DefaultToolComponent themeColor={themeColor} {...props} />

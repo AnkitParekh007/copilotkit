@@ -15,8 +15,8 @@
   },
   "dependencies": {
     "@copilotkit/react-core": "1.56.2",
-    "@copilotkit/react-ui": "1.56.2",
     "@copilotkit/runtime": "1.56.2",
+    "hono": "^4",
     "next": "16.0.8",
     "react": "^19.2.1",
     "react-dom": "^19.2.1",
