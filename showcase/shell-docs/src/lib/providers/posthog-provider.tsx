@@ -6,7 +6,11 @@ import { useEffect, useState, useRef } from "react";
 import { usePathname } from "next/navigation";
 
 const POSTHOG_KEY = process.env.NEXT_PUBLIC_POSTHOG_KEY;
-const POSTHOG_HOST = process.env.NEXT_PUBLIC_POSTHOG_HOST;
+// Reverse-proxied via /ingest/* rewrites in next.config.ts so requests
+// flow through the docs host instead of *.i.posthog.com — bypasses
+// ad blockers / tracking-protection that target the PostHog hostname.
+const POSTHOG_HOST = "/ingest";
+const POSTHOG_UI_HOST = "https://eu.posthog.com";
 
 /**
  * Normalize a pathname for analytics tracking.
@@ -32,12 +36,7 @@ export function PostHogProvider({ children }: { children: React.ReactNode }) {
 
   // Initialize PostHog once (only on mount)
   useEffect(() => {
-    if (
-      POSTHOG_KEY &&
-      POSTHOG_HOST &&
-      !posthog?.__loaded &&
-      !isInitializedRef.current
-    ) {
+    if (POSTHOG_KEY && !posthog?.__loaded && !isInitializedRef.current) {
       isInitializedRef.current = true;
 
       // Read sessionId from URL at initialization time
@@ -107,6 +106,7 @@ export function PostHogProvider({ children }: { children: React.ReactNode }) {
 
         posthog.init(POSTHOG_KEY, {
           api_host: POSTHOG_HOST,
+          ui_host: POSTHOG_UI_HOST,
           person_profiles: "identified_only",
           bootstrap: initSessionId
             ? {
@@ -132,7 +132,7 @@ export function PostHogProvider({ children }: { children: React.ReactNode }) {
 
   // Capture pageview only after PostHog is initialized
   useEffect(() => {
-    if (POSTHOG_KEY && POSTHOG_HOST && posthog?.__loaded) {
+    if (POSTHOG_KEY && posthog?.__loaded) {
       try {
         const normalizedPathname = normalizePathnameForAnalytics(pathname);
         posthog.capture("$pageview", {

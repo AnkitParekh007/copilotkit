@@ -140,6 +140,6 @@ export const config = {
     // raw asset requests served from /public/** (logos, images, icons,
     // fonts, etc.) — without this, every asset fires a phantom
     // PostHog pageview.
-    "/((?!api/|_next/static|_next/image|favicon\\.ico|previews/|robots\\.txt|sitemap\\.xml|manifest\\.webmanifest|\\.well-known/)(?!.*\\.(?:png|jpg|jpeg|svg|gif|webp|ico|avif|woff2?|ttf|otf|eot|map)(?:\\?.*)?$).*)",
+    "/((?!api/|ingest/|_next/static|_next/image|favicon\\.ico|previews/|robots\\.txt|sitemap\\.xml|manifest\\.webmanifest|\\.well-known/)(?!.*\\.(?:png|jpg|jpeg|svg|gif|webp|ico|avif|woff2?|ttf|otf|eot|map)(?:\\?.*)?$).*)",
   ],
 };
