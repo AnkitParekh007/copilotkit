@@ -286,8 +286,8 @@ describe("CellMatrix", () => {
   });
 
   it("filters to rows with regressions when filter=regressions", () => {
-    // lgp/agentic-chat has max_depth=3 but achieves D2 (health+agent green) → regression
-    // lgp/auth has max_depth=0 → no regression possible
+    // lgp/agentic-chat has D5 mapping → maxPossible=6, achieved=2 → regression
+    // lgp/no-d5-feature has NO D5 mapping → maxPossible=4, achieved=4 → no regression
     const regressCells: CatalogCell[] = [
       {
         id: "lgp/agentic-chat",
@@ -301,11 +301,11 @@ describe("CellMatrix", () => {
         category_name: "Chat & UI",
       },
       {
-        id: "lgp/auth",
+        id: "lgp/no-d5-feature",
         integration: "lgp",
         integration_name: "LangGraph Python",
-        feature: "auth",
-        feature_name: "Authentication",
+        feature: "no-d5-feature",
+        feature_name: "No D5 Feature",
         status: "wired",
         max_depth: 0,
         category: "platform",
@@ -315,6 +315,8 @@ describe("CellMatrix", () => {
     const live = mapOf([
       row("health:lgp", "health", "green"),
       row("agent:lgp", "agent", "green"),
+      row("e2e:lgp/no-d5-feature", "e2e", "green"),
+      row("chat:lgp", "chat", "green"),
     ]);
     const oneIntegration = [
       { slug: "lgp", name: "LangGraph Python", tier: "reference" as const },
@@ -331,10 +333,10 @@ describe("CellMatrix", () => {
         referenceSlug="lgp"
       />,
     );
-    // agentic-chat has regression (achieved=2 < max_depth=3) → visible
+    // agentic-chat has regression (achieved=2 < maxPossible=6) → visible
     expect(queryByText("Agentic Chat")).not.toBeNull();
-    // auth has no regression (achieved=2 >= max_depth=0) → hidden
-    expect(queryByText("Authentication")).toBeNull();
+    // no-d5-feature at ceiling (achieved=4 === maxPossible=4) → hidden
+    expect(queryByText("No D5 Feature")).toBeNull();
   });
 
   it("filters to show only reference integration when filter=reference", () => {

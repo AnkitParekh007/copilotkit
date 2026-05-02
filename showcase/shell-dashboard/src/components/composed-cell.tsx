@@ -111,7 +111,7 @@ function DepthLayer({
           depth={depth.achieved}
           status={catalogCell.status}
           regression={depth.isRegression}
-          maxDepth={catalogCell.max_depth}
+          maxDepth={depth.maxPossible}
         />
       </button>
       {drilldownOpen && (

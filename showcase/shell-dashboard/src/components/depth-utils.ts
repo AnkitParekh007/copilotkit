@@ -39,7 +39,15 @@ export type AchievedDepth = 0 | 1 | 2 | 3 | 4 | 5 | 6;
 export interface DepthResult {
   /** Highest contiguous depth achieved (0-6). */
   achieved: AchievedDepth;
-  /** Whether achieved depth is below the historical high-water mark (max_depth). */
+  /**
+   * Maximum possible depth for this cell based on probe EXISTENCE — not
+   * whether probes are currently green, but whether a mapping/key exists
+   * at each depth level. A feature with no entry in CATALOG_TO_D5_KEY
+   * can never reach D5, so maxPossible caps at 4. This drives chip color:
+   * green when achieved === maxPossible (cell is at its ceiling).
+   */
+  maxPossible: AchievedDepth;
+  /** Whether achieved depth is below maxPossible (not historical max_depth). */
   isRegression: boolean;
   /**
    * True when the cell's catalog status is "unsupported". Unsupported cells
@@ -65,10 +73,46 @@ function isD5Green(
   featureId: string,
 ): boolean {
   const d5Keys = CATALOG_TO_D5_KEY[featureId];
+  // No D5 mapping = no CV test exists for this feature = cannot be D5.
+  // Previously fell back to a direct key lookup which could resolve true
+  // from stale/shared PB rows, granting D5 to cells without CV tests.
   if (!d5Keys || d5Keys.length === 0) {
-    return isGreen(live, keyFor("d5", slug, featureId));
+    return false;
   }
   return d5Keys.every((d5Key) => isGreen(live, keyFor("d5", slug, d5Key)));
+}
+
+/**
+ * Compute the maximum possible depth for a cell based on probe EXISTENCE.
+ * This checks whether the structural prerequisites for each depth level
+ * exist (key mappings, feature ID), NOT whether probes are currently green.
+ *
+ * - D0: always possible for wired/stub cells
+ * - D1-D4: always possible if the cell has a feature ID
+ * - D5: possible only if CATALOG_TO_D5_KEY[featureId] exists and has entries
+ * - D6: always possible if D5 is possible (d6 keys are per-feature)
+ */
+function computeMaxPossible(cell: CatalogCell): AchievedDepth {
+  // Unsupported/unshipped: max possible is 0.
+  if (cell.status === "unsupported" || cell.status === "unshipped") {
+    return 0;
+  }
+
+  // No feature ID: can only reach D2 (integration-scoped probes).
+  if (cell.feature === null) {
+    return 2;
+  }
+
+  // Check if D5 is structurally possible (mapping exists).
+  const d5Keys = CATALOG_TO_D5_KEY[cell.feature];
+  if (!d5Keys || d5Keys.length === 0) {
+    // No D5 mapping: max possible is D4.
+    return 4;
+  }
+
+  // D5 mapping exists: D6 is always structurally possible too
+  // (d6 keys are per-feature, no separate mapping needed).
+  return 6;
 }
 
 /**
@@ -81,17 +125,19 @@ export function deriveDepth(
   cell: CatalogCell,
   live: LiveStatusMap,
 ): DepthResult {
+  const maxPossible = computeMaxPossible(cell);
+
   // Unsupported cells never enter the depth ladder at all — they're
   // architectural exclusions, not "cells at D0". Flag them explicitly
   // so consumers render the unsupported indicator instead of D0.
   if (cell.status === "unsupported") {
-    return { achieved: 0, isRegression: false, unsupported: true };
+    return { achieved: 0, maxPossible, isRegression: false, unsupported: true };
   }
 
   // Unshipped cells never advance past D0 — no probes attached, no
   // possibility of regression.
   if (cell.status === "unshipped") {
-    return { achieved: 0, isRegression: false, unsupported: false };
+    return { achieved: 0, maxPossible, isRegression: false, unsupported: false };
   }
 
   // D0: cell exists (wired or stub) — always true if we reach here.
@@ -101,7 +147,8 @@ export function deriveDepth(
   if (!isGreen(live, keyFor("health", cell.integration))) {
     return {
       achieved,
-      isRegression: achieved < cell.max_depth,
+      maxPossible,
+      isRegression: achieved < maxPossible,
       unsupported: false,
     };
   }
@@ -111,7 +158,8 @@ export function deriveDepth(
   if (!isGreen(live, keyFor("agent", cell.integration))) {
     return {
       achieved,
-      isRegression: achieved < cell.max_depth,
+      maxPossible,
+      isRegression: achieved < maxPossible,
       unsupported: false,
     };
   }
@@ -122,14 +170,16 @@ export function deriveDepth(
   if (cell.feature === null) {
     return {
       achieved,
-      isRegression: achieved < cell.max_depth,
+      maxPossible,
+      isRegression: achieved < maxPossible,
       unsupported: false,
     };
   }
   if (!isGreen(live, keyFor("e2e", cell.integration, cell.feature))) {
     return {
       achieved,
-      isRegression: achieved < cell.max_depth,
+      maxPossible,
+      isRegression: achieved < maxPossible,
       unsupported: false,
     };
   }
@@ -141,7 +191,8 @@ export function deriveDepth(
   if (!(chatGreen || toolsGreen)) {
     return {
       achieved,
-      isRegression: achieved < cell.max_depth,
+      maxPossible,
+      isRegression: achieved < maxPossible,
       unsupported: false,
     };
   }
@@ -151,7 +202,8 @@ export function deriveDepth(
   if (!isD5Green(live, cell.integration, cell.feature)) {
     return {
       achieved,
-      isRegression: achieved < cell.max_depth,
+      maxPossible,
+      isRegression: achieved < maxPossible,
       unsupported: false,
     };
   }
@@ -164,7 +216,8 @@ export function deriveDepth(
 
   return {
     achieved,
-    isRegression: achieved < cell.max_depth,
+    maxPossible,
+    isRegression: achieved < maxPossible,
     unsupported: false,
   };
 }

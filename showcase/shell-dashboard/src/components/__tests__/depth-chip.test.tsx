@@ -4,7 +4,7 @@
  */
 import { describe, it, expect } from "vitest";
 import { render } from "@testing-library/react";
-import { DepthChip } from "../depth-chip";
+import { DepthChip, depthColorClass } from "../depth-chip";
 
 describe("DepthChip", () => {
   it.each([0, 1, 2, 3, 4, 5, 6])(
@@ -178,5 +178,64 @@ describe("DepthChip", () => {
     );
     const chip = getByTestId("depth-chip");
     expect(chip.className).toContain("danger");
+  });
+});
+
+describe("depthColorClass (direct)", () => {
+  // (i) depthColorClass(4, false, 4) → green (at ceiling)
+  it("(i) depthColorClass(4, 4) → green", () => {
+    expect(depthColorClass(4, false, 4)).toContain("emerald");
+  });
+
+  // (j) depthColorClass(4, false, 5) → amber (1 below)
+  it("(j) depthColorClass(4, 5) → amber", () => {
+    expect(depthColorClass(4, false, 5)).toContain("amber");
+  });
+
+  // (k) depthColorClass(3, false, 5) → amber (2 below)
+  it("(k) depthColorClass(3, 5) → amber", () => {
+    expect(depthColorClass(3, false, 5)).toContain("amber");
+  });
+
+  // (l) depthColorClass(2, false, 5) → red (3 below)
+  it("(l) depthColorClass(2, 5) → red", () => {
+    expect(depthColorClass(2, false, 5)).toContain("danger");
+  });
+
+  // (m) depthColorClass(5, false, 5) → green (at ceiling)
+  it("(m) depthColorClass(5, 5) → green", () => {
+    expect(depthColorClass(5, false, 5)).toContain("emerald");
+  });
+
+  // (n) depthColorClass(0, false, anything) → gray
+  it("(n) depthColorClass(0, 5) → gray", () => {
+    expect(depthColorClass(0, false, 5)).toContain("text-muted");
+  });
+
+  it("(n) depthColorClass(0, 0) → gray", () => {
+    expect(depthColorClass(0, false, 0)).toContain("text-muted");
+  });
+
+  it("(n) depthColorClass(0, 4) → gray", () => {
+    expect(depthColorClass(0, false, 4)).toContain("text-muted");
+  });
+
+  // Additional: D6 at ceiling
+  it("depthColorClass(6, 6) → green", () => {
+    expect(depthColorClass(6, false, 6)).toContain("emerald");
+  });
+
+  // Additional: regression overrides everything
+  it("regression overrides green", () => {
+    expect(depthColorClass(5, true, 5)).toContain("danger");
+  });
+
+  it("regression overrides amber", () => {
+    expect(depthColorClass(4, true, 6)).toContain("danger");
+  });
+
+  // Additional: D1 with maxDepth=6 → red (5 below)
+  it("depthColorClass(1, 6) → red", () => {
+    expect(depthColorClass(1, false, 6)).toContain("danger");
   });
 });

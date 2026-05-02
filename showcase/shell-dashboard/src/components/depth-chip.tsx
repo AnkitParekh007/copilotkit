@@ -36,7 +36,7 @@ export interface DepthChipProps {
  * amber within 2 levels, red otherwise. Without `maxDepth` the fallback
  * heuristic is: D4+ green, D2-D3 amber, D0-D1 red.
  */
-function depthColorClass(depth: number, regression?: boolean, maxDepth?: number): string {
+export function depthColorClass(depth: number, regression?: boolean, maxDepth?: number): string {
   if (regression) {
     return "bg-[var(--danger)] text-white";
   }
