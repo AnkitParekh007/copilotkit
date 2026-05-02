@@ -14,6 +14,7 @@ import { OverlayToggleBar } from "@/components/overlay-toggle-bar";
 import { ComposedCell } from "@/components/composed-cell";
 import { AdaptiveStatsBar } from "@/components/adaptive-stats-bar";
 import { AdaptiveLegend } from "@/components/adaptive-legend";
+import { BaselineTab } from "@/components/baseline-tab";
 import type { ParityTier } from "@/components/parity-badge";
 import { getDocsStatus } from "@/lib/docs-status";
 import type { CatalogCell } from "@/components/depth-utils";
@@ -157,6 +158,18 @@ export default function Page() {
         </button>
         <button
           type="button"
+          data-testid="tab-baseline"
+          onClick={() => setTab("baseline")}
+          className={`px-4 py-2.5 text-sm font-medium transition-colors cursor-pointer ${
+            activeTab === "baseline"
+              ? "text-[var(--accent)] border-b-2 border-[var(--accent)] -mb-px"
+              : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
+          }`}
+        >
+          Baseline
+        </button>
+        <button
+          type="button"
           data-testid="tab-ops"
           onClick={() => setTab("ops")}
           className={`px-4 py-2.5 text-sm font-medium transition-colors cursor-pointer ${
@@ -199,6 +212,8 @@ export default function Page() {
           <AdaptiveLegend overlays={overlays} />
         </>
       )}
+
+      {activeTab === "baseline" && <BaselineTab />}
 
       {activeTab === "ops" && (
         <StatusTab entries={probeEntries} onTrigger={handleTrigger} />
