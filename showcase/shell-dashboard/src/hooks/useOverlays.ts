@@ -21,12 +21,17 @@ const HASH_PREFIX = "matrix:";
 
 /** Parse the current URL hash into a tab + overlay set, handling legacy redirects. */
 function parseHash(): {
-  tab: "matrix" | "ops";
+  tab: "matrix" | "baseline" | "ops";
   overlays: OverlaySet | null;
 } {
   const raw =
     typeof window !== "undefined" ? window.location.hash.slice(1) : "";
   if (!raw) return { tab: "matrix", overlays: null };
+
+  // #baseline — switch to baseline tab
+  if (raw === "baseline") {
+    return { tab: "baseline", overlays: null };
+  }
 
   // #ops — switch to ops tab
   if (raw === "ops") {
@@ -64,8 +69,12 @@ function parseHash(): {
 }
 
 /** Replace hash via replaceState (no history entry, no navigation). */
-function writeHash(tab: "matrix" | "ops", overlays?: OverlaySet): void {
+function writeHash(tab: "matrix" | "baseline" | "ops", overlays?: OverlaySet): void {
   if (typeof window === "undefined") return;
+  if (tab === "baseline") {
+    window.history.replaceState(null, "", "#baseline");
+    return;
+  }
   if (tab === "ops") {
     window.history.replaceState(null, "", "#ops");
     return;
@@ -114,10 +123,10 @@ function saveToStorage(overlays: OverlaySet): void {
 
 export interface UseOverlaysReturn {
   overlays: OverlaySet;
-  activeTab: "matrix" | "ops";
+  activeTab: "matrix" | "baseline" | "ops";
   toggle: (overlay: Overlay) => void;
   applyPreset: (presetId: string) => void;
-  setTab: (tab: "matrix" | "ops") => void;
+  setTab: (tab: "matrix" | "baseline" | "ops") => void;
   activePreset: string | null;
   showFilters: boolean;
   has: (overlay: Overlay) => boolean;
@@ -129,7 +138,7 @@ export function useOverlays(): UseOverlaysReturn {
   const [overlays, setOverlays] = useState<OverlaySet>(
     () => new Set(DEFAULT_OVERLAYS) as OverlaySet,
   );
-  const [activeTab, setActiveTabRaw] = useState<"matrix" | "ops">("matrix");
+  const [activeTab, setActiveTabRaw] = useState<"matrix" | "baseline" | "ops">("matrix");
 
   // Sync from URL hash / localStorage after hydration
   useEffect(() => {
@@ -184,7 +193,7 @@ export function useOverlays(): UseOverlaysReturn {
   );
 
   const setTab = useCallback(
-    (tab: "matrix" | "ops") => {
+    (tab: "matrix" | "baseline" | "ops") => {
       setActiveTabRaw(tab);
       writeHash(tab, overlays);
     },
