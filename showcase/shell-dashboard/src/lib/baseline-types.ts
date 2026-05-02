@@ -159,10 +159,7 @@ export const FEATURE_CATEGORIES: Record<string, string[]> = {
     "readonly-state-agent-context",
     "sub-agents",
   ],
-  Advanced: [
-    "byoc-hashbrown",
-    "byoc-json-render",
-  ],
+  Advanced: ["byoc-hashbrown", "byoc-json-render"],
 };
 
 /* ------------------------------------------------------------------ */

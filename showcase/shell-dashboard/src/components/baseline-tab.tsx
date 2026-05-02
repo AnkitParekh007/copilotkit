@@ -58,21 +58,18 @@ export function BaselineTab() {
   }, [cells]);
 
   // Toggle between view and edit mode, gating on PB auth
-  const handleToggleEditing = useCallback(
-    (wantEdit: boolean) => {
-      if (!wantEdit) {
-        setEditing(false);
-        return;
-      }
-      // Toggling ON: check auth
-      if (pb.authStore.isValid) {
-        setEditing(true);
-      } else {
-        setShowAuth(true);
-      }
-    },
-    [],
-  );
+  const handleToggleEditing = useCallback((wantEdit: boolean) => {
+    if (!wantEdit) {
+      setEditing(false);
+      return;
+    }
+    // Toggling ON: check auth
+    if (pb.authStore.isValid) {
+      setEditing(true);
+    } else {
+      setShowAuth(true);
+    }
+  }, []);
 
   const handleAuthSuccess = useCallback(() => {
     setShowAuth(false);

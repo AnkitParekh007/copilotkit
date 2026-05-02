@@ -84,9 +84,7 @@ export function BaselineCellView({
       <span style={{ fontSize: 12, lineHeight: 1 }}>{statusCfg.emoji}</span>
 
       {tags.length > 0 && (
-        <span
-          style={{ display: "inline-flex", alignItems: "center", gap: 1 }}
-        >
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 1 }}>
           {tags.map((tag) => (
             <TagBadge key={tag} tag={tag} />
           ))}

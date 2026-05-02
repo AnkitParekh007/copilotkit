@@ -77,11 +77,7 @@ interface CategorySectionProps {
   editing: boolean;
   activeCell: string | null;
   onCellClick: (key: string) => void;
-  onSave: (
-    key: string,
-    status: BaselineStatus,
-    tags: BaselineTag[],
-  ) => void;
+  onSave: (key: string, status: BaselineStatus, tags: BaselineTag[]) => void;
   colSpan: number;
 }
 
@@ -142,9 +138,7 @@ function CategorySection({
                     status={status}
                     tags={tags}
                     editing={editing}
-                    onClick={
-                      editing ? () => onCellClick(key) : undefined
-                    }
+                    onClick={editing ? () => onCellClick(key) : undefined}
                   />
                   {isActive && (
                     <span
@@ -178,19 +172,15 @@ export function BaselineGrid({ cells, editing, onUpdate }: Props) {
 
   const partners = useMemo(() => sortedPartners(), []);
 
-  const handleCellClick = useCallback(
-    (key: string) => {
-      setActiveCell((prev) => (prev === key ? null : key));
-    },
-    [],
-  );
+  const handleCellClick = useCallback((key: string) => {
+    setActiveCell((prev) => (prev === key ? null : key));
+  }, []);
 
   const handleSave = useCallback(
     (key: string, status: BaselineStatus, tags: BaselineTag[]) => {
       setActiveCell(null);
       onUpdate(key, status, tags).catch((err: unknown) => {
-        const msg =
-          err instanceof Error ? err.message : "Failed to save cell";
+        const msg = err instanceof Error ? err.message : "Failed to save cell";
         showErrorToast(msg);
       });
     },

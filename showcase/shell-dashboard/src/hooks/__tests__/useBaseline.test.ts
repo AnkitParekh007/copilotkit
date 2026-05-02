@@ -52,16 +52,14 @@ vi.mock("../../lib/pb", () => {
             mockState.listener = null;
           };
         }),
-        update: vi.fn(
-          async (id: string, data: Record<string, unknown>) => {
-            mockState.updateCalls.push({ id, data });
-            if (mockState.updateFailNext) {
-              mockState.updateFailNext = false;
-              throw new Error("PB update failed");
-            }
-            return { ...data, id };
-          },
-        ),
+        update: vi.fn(async (id: string, data: Record<string, unknown>) => {
+          mockState.updateCalls.push({ id, data });
+          if (mockState.updateFailNext) {
+            mockState.updateFailNext = false;
+            throw new Error("PB update failed");
+          }
+          return { ...data, id };
+        }),
       }),
     },
   };
@@ -176,9 +174,7 @@ describe("useBaseline", () => {
       mockState.listener?.({ action: "update", record: updated });
     });
 
-    expect(
-      result.current.cells.get(cell.key as string),
-    ).toMatchObject({
+    expect(result.current.cells.get(cell.key as string)).toMatchObject({
       status: "impossible",
     });
   });
@@ -227,16 +223,10 @@ describe("useBaseline", () => {
     });
 
     await act(async () => {
-      await result.current.updateCell(
-        cell.key as string,
-        "possible",
-        ["cpk"],
-      );
+      await result.current.updateCell(cell.key as string, "possible", ["cpk"]);
     });
 
-    expect(
-      result.current.cells.get(cell.key as string),
-    ).toMatchObject({
+    expect(result.current.cells.get(cell.key as string)).toMatchObject({
       status: "possible",
       tags: ["cpk"],
     });
@@ -259,20 +249,14 @@ describe("useBaseline", () => {
 
     await act(async () => {
       try {
-        await result.current.updateCell(
-          cell.key as string,
-          "impossible",
-          [],
-        );
+        await result.current.updateCell(cell.key as string, "impossible", []);
       } catch {
         // Expected
       }
     });
 
     // Should revert to original
-    expect(
-      result.current.cells.get(cell.key as string),
-    ).toMatchObject({
+    expect(result.current.cells.get(cell.key as string)).toMatchObject({
       status: "works",
       tags: [],
     });
