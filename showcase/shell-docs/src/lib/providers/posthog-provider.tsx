@@ -115,6 +115,8 @@ export function PostHogProvider({ children }: { children: React.ReactNode }) {
             : undefined,
           // Disable automatic pageview capture (we do it manually)
           capture_pageview: false,
+          // Skip dead-clicks-autocapture.js to trim LCP analytics surface
+          capture_dead_clicks: false,
           // Reduce network requests by batching
           request_batching: true,
           // Don't enable debug mode - it causes too much logging

@@ -83,6 +83,7 @@ export default function RootLayout({
         : rawSha.slice(0, 7);
 
   const REO_KEY = process.env.NEXT_PUBLIC_REO_KEY;
+  const REB2B_KEY = process.env.NEXT_PUBLIC_REB2B_KEY;
 
   return (
     <html
@@ -119,6 +120,13 @@ export default function RootLayout({
           async
           defer
         />
+        {REB2B_KEY ? (
+          <Script
+            id="reb2b-script"
+            strategy="afterInteractive"
+            src={`https://b2bjsstore.s3.us-west-2.amazonaws.com/b/${REB2B_KEY}/${REB2B_KEY}.js.gz`}
+          />
+        ) : null}
       </head>
       <body className="min-h-screen">
         <AnalyticsClient />

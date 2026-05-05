@@ -1,7 +1,6 @@
 "use client";
 
 import { useGoogleAnalytics } from "@/lib/hooks/use-google-analytics";
-import { useRB2B } from "@/lib/hooks/use-rb2b";
 import { CopyTracker } from "@/lib/providers/copy-tracker";
 
 /**
@@ -12,7 +11,6 @@ import { CopyTracker } from "@/lib/providers/copy-tracker";
  * pattern: one client boundary, all hooks together.
  */
 export function AnalyticsClient() {
-  useRB2B();
   useGoogleAnalytics();
   return <CopyTracker />;
 }
