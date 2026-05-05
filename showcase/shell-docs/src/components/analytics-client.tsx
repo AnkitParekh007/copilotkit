@@ -2,18 +2,17 @@
 
 import { useGoogleAnalytics } from "@/lib/hooks/use-google-analytics";
 import { useRB2B } from "@/lib/hooks/use-rb2b";
+import { CopyTracker } from "@/lib/providers/copy-tracker";
 
 /**
  * Client-side wrapper that mounts analytics/visitor-id hooks.
  *
  * layout.tsx is a server component, so any hook-based telemetry must run
- * inside a "use client" boundary. This component is intentionally
- * render-free — it only invokes hooks for their side effects (script
- * injection, pageview capture, etc.). Mirrors upstream's
- * `ProvidersWrapper` pattern: one client boundary, all hooks together.
+ * inside a "use client" boundary. Mirrors upstream's `ProvidersWrapper`
+ * pattern: one client boundary, all hooks together.
  */
 export function AnalyticsClient() {
   useRB2B();
   useGoogleAnalytics();
-  return null;
+  return <CopyTracker />;
 }
