@@ -17,6 +17,16 @@ Build **agent-native applications** with generative UI, shared state, and human-
 
 </div>
 
+> [!NOTE]
+> This repository is a research fork of [CopilotKit/CopilotKit](https://github.com/CopilotKit/CopilotKit). I am studying CopilotKit and AG-UI patterns with a focus on Angular copilot architecture and generative UI systems. My Angular-focused work lives in [ngx-copilot-sdk](https://github.com/AnkitParekh007/ngx-copilot-sdk) and [angular-ai-copilot-starter](https://github.com/AnkitParekh007/angular-ai-copilot-starter). This note does not imply authorship or ownership of CopilotKit.
+
+## Research Fork Notes
+
+- [AG_UI_PROTOCOL_NOTES.md](./AG_UI_PROTOCOL_NOTES.md)
+- [ANGULAR_RESEARCH_NOTES.md](./ANGULAR_RESEARCH_NOTES.md)
+- [COPILOTKIT_TO_ANGULAR_COMPARISON.md](./COPILOTKIT_TO_ANGULAR_COMPARISON.md)
+- [IDEAS_FOR_NGX_COPILOT_SDK.md](./IDEAS_FOR_NGX_COPILOT_SDK.md)
+
 [![CopilotKit](https://github.com/user-attachments/assets/aeb56c28-c766-44a5-810c-5d999bb6a32a)](https://go.copilotkit.ai/copilotkit-docs)
 
 <div align="center" style="display:flex;justify-content:start;gap:16px;height:20px;margin: 0;">
